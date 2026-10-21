@@ -218,6 +218,11 @@ const apiKeyKeys = {
 };
 
 /** The caller's own personal access tokens (`/user/tokens`). Not workspace-scoped. */
+const cliDeviceKeys = {
+  all: ["cliDevice"] as const,
+  request: (userCode: string) => [...cliDeviceKeys.all, "request", { userCode }] as const
+};
+
 const userTokenKeys = {
   all: ["userTokens"] as const,
   list: () => [...userTokenKeys.all, "list"] as const,
@@ -1178,6 +1183,7 @@ const queryKeys = {
   thread: threadKeys,
   apiKey: apiKeyKeys,
   userToken: userTokenKeys,
+  cliDevice: cliDeviceKeys,
   secret: secretKeys,
   spApi: spApiKeys,
   logs: logsKeys,

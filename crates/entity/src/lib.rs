@@ -105,6 +105,7 @@ pub mod chat_channel_members;
 pub mod chat_channels;
 pub mod chat_messages;
 pub mod cli_auth_codes;
+pub mod cli_device_requests;
 pub mod device_tokens;
 pub mod document_ask_sessions;
 pub mod document_ask_turns;

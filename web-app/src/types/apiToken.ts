@@ -281,3 +281,26 @@ export interface CliAuthorizeRequest {
 export interface CliAuthorizeResponse {
   code: string;
 }
+
+/**
+ * `GET /auth/cli/device/requests/{user_code}`: a device-code request waiting on a person
+ * (`oxyc … --no-browser`). oxyc runs where no browser reaches it and polls; the page approves
+ * the request here instead of handing a code back to a loopback listener.
+ */
+export interface CliDeviceRequest {
+  /** `BCDF-GHJK`, as oxyc printed it. */
+  user_code: string;
+  hostname: string;
+  /**
+   * The `/cli-auth` parameters oxyc asked with (`kind`, `apps`, `hours`, `name`, `standing`),
+   * as they would have arrived in the URL. Empty for `oxyc login`.
+   */
+  ask: Record<string, string>;
+  created_at: string;
+  expires_at: string;
+}
+
+/** `POST /auth/cli/device/requests/{user_code}/approve`. No `mint` for `oxyc login`. */
+export interface CliDeviceApproveRequest {
+  mint?: CliMintRequest;
+}

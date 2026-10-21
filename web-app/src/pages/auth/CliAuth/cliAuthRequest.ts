@@ -174,18 +174,35 @@ export const parseCliAuthRequest = (params: URLSearchParams): CliAuthRequest => 
   }
   if (!asksToMint) return { kind: "pkce", port, state, codeChallenge, hostname };
 
+  const read = readTokenAsk(params);
+  return read.kind === "invalid" ? read : { ...read, port, state, codeChallenge, hostname };
+};
+
+/** What a token request asks for, or why it can't be read. */
+export type TokenAsk =
+  | { kind: "mint"; ask: MintAsk }
+  | { kind: "agent_mint"; ask: AgentAsk }
+  | { kind: "invalid"; reason: string; title: string };
+
+/**
+ * Read what a token request asks for from its `kind` and the params beside it: from the link
+ * oxyc opened, or from a device-code request (`oxyc … --no-browser`), which stores the same
+ * params. The rules are the link's, whichever way they arrived: one known kind, said once,
+ * with only its own params.
+ */
+export const readTokenAsk = (params: URLSearchParams): TokenAsk => {
+  const incomplete: TokenAsk = { kind: "invalid", reason: INVALID_MINT, title: MINT_TITLE };
   if (asksForTwoKinds(params)) return { kind: "invalid", reason: TWO_KINDS, title: MINT_TITLE };
   // One kind, said once: a repeated `kind` is a link no oxyc writes.
   if (params.getAll("kind").length > 1) return incomplete;
-  const handoff = { port, state, codeChallenge, hostname };
   switch (params.get("kind")) {
     case SANDBOX_AGENT: {
       const ask = parseMintAsk(params);
-      return ask ? { kind: "mint", ...handoff, ask } : incomplete;
+      return ask ? { kind: "mint", ask } : incomplete;
     }
     case AGENT: {
       const ask = parseAgentAsk(params);
-      return ask ? { kind: "agent_mint", ...handoff, ask } : incomplete;
+      return ask ? { kind: "agent_mint", ask } : incomplete;
     }
     default:
       return { kind: "invalid", reason: UNKNOWN_KIND, title: MINT_TITLE };

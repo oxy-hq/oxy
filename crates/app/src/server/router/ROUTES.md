@@ -69,6 +69,8 @@ GET    /auth/config
 POST   /auth/google  /auth/github  /auth/okta
 POST   /auth/magic-link/request  /auth/magic-link/verify
 POST   /auth/cli/exchange        (`oxyc login`: redeem the one-time code for a token — the login's, or the sandbox agent token or agent token the code was approved for)
+POST   /auth/cli/device          (`oxyc … --no-browser`: start a device-code request — challenge, hostname and the `/cli-auth` ask — for a device code and a user code; rate-limited per client)
+POST   /auth/cli/device/poll     (`oxyc … --no-browser`: poll with the device code and PKCE verifier; `pending` / `slow_down`, then the approved token once, or 400 `access_denied` / `expired_token` / `invalid_code`; rate-limited per client)
 POST   /auth/browser-ticket/redeem (`oxyc login-link`: a browser redeems a token's one-time ticket for a session that acts as that token)
 POST   /auth/oidc/exchange       (trusted access: a GitHub Actions OIDC token for a 15-minute `oxy_ci_` token; rate-limited per client)
 POST   /auth/tokens/revoke-leaked (leak response: revoke reported new-format tokens, never a legacy key; rate-limited per client)
@@ -114,6 +116,9 @@ POST   /invitations/{token}/accept
 GET    /user/token-options                    (session only; `sandbox_agent.staging: true` says this server takes the staging option on a mint)
 GET|DELETE /auth/token                        (the calling token, about itself)
 POST   /auth/cli/authorize                    (session only — `oxyc login`: a one-time code for the CLI's challenge; with `mint`, a code for a sandbox agent token, or with `mint.kind: "agent"` for an agent token: an all-access `oxy_pat_` of the agent's own, for hours. A token, or the browser session a token opened, answers 403 `session_required`)
+GET    /auth/cli/device/requests/{user_code}  (session only — a pending device-code request, for the `/cli-auth/device` page to lay out; 404 once decided or lapsed)
+POST   /auth/cli/device/requests/{user_code}/approve (session only — approve it with the `mint` body `/auth/cli/authorize` takes, checked the same way; a refusal also refuses the request, with that reason)
+POST   /auth/cli/device/requests/{user_code}/deny    (session only — decline it; the polling CLI stops with `access_denied`)
 POST   /auth/browser-ticket                   (a personal token only — `oxyc login-link`: a one-time ticket that signs a browser in as the calling token)
 
 /admin/sandbox-agent-tokens                   (`operate_platform`; rows narrowed to the grant's orgs)

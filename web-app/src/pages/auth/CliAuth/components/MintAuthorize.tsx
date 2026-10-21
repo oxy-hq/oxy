@@ -1,9 +1,10 @@
 import type React from "react";
 import { useEffect, useState } from "react";
+import useAuthorizeCli from "@/hooks/api/cliAuth/useAuthorizeCli";
 import { codeCallbackUrl, loginUrl, returnToUrl, type TokenRequest } from "../cliAuthRequest";
 import { type CliSession, leaveTo, readCliSession } from "../cliSession";
 import AgentApproval from "./AgentApproval";
-import MintApproval from "./MintApproval";
+import MintApproval, { type ApprovalSubmit } from "./MintApproval";
 import MintPage from "./MintPage";
 
 type Step = "checking" | "confirm" | "redirecting" | "declined";
@@ -23,6 +24,7 @@ type Step = "checking" | "confirm" | "redirecting" | "declined";
 const MintAuthorize: React.FC<{ request: TokenRequest }> = ({ request }) => {
   const [step, setStep] = useState<Step>("checking");
   const [session, setSession] = useState<CliSession | null>(null);
+  const authorize = useAuthorizeCli();
 
   // Carries what was asked for, so signing in comes back to this approval and not to a login.
   const loginHref = loginUrl(returnToUrl(window.location.origin, request));
@@ -72,11 +74,21 @@ const MintAuthorize: React.FC<{ request: TokenRequest }> = ({ request }) => {
     );
   }
 
+  // The approval is traded for a code bound to oxyc's challenge, for the loopback.
+  const submit: ApprovalSubmit = {
+    pending: authorize.isPending,
+    send: (mint, { onSuccess, onError }) =>
+      authorize.mutate(
+        { code_challenge: request.codeChallenge, hostname: request.hostname, mint },
+        { onSuccess: ({ code }) => onSuccess(code), onError }
+      )
+  };
   const approval = {
     email: session?.email,
-    onApproved: (code: string) => {
+    submit,
+    onApproved: (code: string | null) => {
       setStep("redirecting");
-      leaveTo(codeCallbackUrl(request, code));
+      if (code) leaveTo(codeCallbackUrl(request, code));
     },
     onDeclined: () => setStep("declined"),
     // The session lapsed while the page sat open: sign in again and come back here.

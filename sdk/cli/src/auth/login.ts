@@ -35,6 +35,7 @@ import { err } from "../ui/tty.js";
 import { CliError, ExitCode, exitCodeForStatus } from "../util/errors.js";
 import { printableLines } from "../util/printable.js";
 import { type HostCredential, saveCredential } from "./credentials.js";
+import { deviceRound } from "./device.js";
 import { createPkce, type Pkce } from "./pkce.js";
 
 /** What `/api/user` gives back. Only the two fields the login flow reports. */
@@ -48,6 +49,13 @@ export interface LoginOptions {
   open?: (url: string) => void;
   /** Names the token `oxyc on <hostname>`. Defaults to this machine's. */
   hostname?: string;
+  /**
+   * `--no-browser`: approve by device code (`device.ts`) instead of the
+   * loopback, for a machine whose `127.0.0.1` no browser can reach.
+   */
+  noBrowser?: boolean;
+  /** Wait between device-code polls. Tests inject one; the default sleeps. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /** What the loopback caught. */
@@ -81,7 +89,7 @@ export interface BrowserPurpose {
   waitingFor: string;
 }
 
-const LOGIN_PURPOSE: BrowserPurpose = {
+export const LOGIN_PURPOSE: BrowserPurpose = {
   opening: "log in",
   retry: "oxyc login",
   done: "Logged in to oxy ✓",
@@ -100,7 +108,7 @@ function successHtml(purpose: BrowserPurpose): string {
 /** The Rust waits 5 minutes. Long enough for an SSO detour with an MFA prompt. */
 const LOGIN_TIMEOUT_MS = 300_000;
 
-function base(target: string): string {
+export function base(target: string): string {
   return target.replace(/\/+$/, "");
 }
 
@@ -140,6 +148,15 @@ export async function login(
  */
 async function obtainToken(target: string, opts: LoginOptions): Promise<Minted> {
   const pkce = createPkce();
+  if (opts.noBrowser) {
+    const minted = await deviceRound(target, opts, pkce);
+    if (minted) return minted;
+    throw new CliError(`${target} cannot approve a login by device code`, {
+      code: ExitCode.UNAVAILABLE,
+      detail: "POST /api/auth/cli/device answered 404: the deployment predates `--no-browser`.",
+      hint: "run `oxyc login` where a browser can open, or set OXY_TOKEN"
+    });
+  }
   const first = await browserRound(target, opts, pkce);
   if (first.kind === "token") {
     log.info(
@@ -221,7 +238,7 @@ export interface CodeRefused {
   hint: string;
 }
 
-const LOGIN_CODE_REFUSED: CodeRefused = {
+export const LOGIN_CODE_REFUSED: CodeRefused = {
   message: "the login code was rejected",
   detail: "a code is single-use and lives five minutes.",
   hint: `run \`${LOGIN_PURPOSE.retry}\` again`
@@ -260,16 +277,7 @@ export async function exchangeCliCode(
   if (response.status === 404) return undefined;
 
   const text = await response.text();
-  let body: {
-    token?: { id?: string; expires_at?: string | null } & Record<string, unknown>;
-    secret?: string;
-    code?: string;
-  };
-  try {
-    body = JSON.parse(text);
-  } catch {
-    body = {};
-  }
+  const body = parseBody(text);
   if (!response.ok) {
     if (body.code === "invalid_code") {
       throw new CliError(refused.message, {
@@ -285,8 +293,33 @@ export async function exchangeCliCode(
       detail: printableLines(text.slice(0, 2000)).trim() || undefined
     });
   }
+  return mintedFrom(body, "the login exchange returned no token");
+}
+
+/** What the exchange and a device-code poll answer with. */
+export interface MintBody {
+  status?: string;
+  token?: { id?: string; expires_at?: string | null } & Record<string, unknown>;
+  secret?: string;
+  code?: string;
+  error?: string;
+  interval?: number;
+}
+
+/** A response body as JSON, or `{}` when it is not. */
+export function parseBody(text: string): MintBody {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === "object" ? (parsed as MintBody) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The token a successful exchange or poll carries. `none` is the error when it carries none. */
+export function mintedFrom(body: MintBody, none: string): Minted {
   if (!body.secret) {
-    throw new CliError("the login exchange returned no token", { code: ExitCode.UNAVAILABLE });
+    throw new CliError(none, { code: ExitCode.UNAVAILABLE });
   }
   return {
     token: body.secret,

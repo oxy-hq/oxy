@@ -23,6 +23,13 @@ oxyc tokens create --sandbox-agent --app <org>/<app> --env <deployment>
   browser. The command waits five minutes for the click, so run it with a
   timeout at least that long: a shell tool that stops a command after two
   minutes kills it first. Never open or click that page with a browser tool.
+- **Where no browser can reach your machine** (a cloud container, a CI job, a
+  remote box), add `--no-browser`. `oxyc` prints a URL and an eight-letter
+  code on stderr instead of opening a page, and waits up to ten minutes. Give
+  your engineer both: they open the URL on any device where they are signed
+  in, type the code the terminal shows, and approve. The token is printed
+  exactly as above. The rule does not change: never open or approve that page
+  yourself, with a browser tool or any other way.
 - **Evaluate that line and work with the token.** In a shell that persists:
   `eval "$(oxyc tokens create --sandbox-agent --app <org>/<app> --env <deployment>)"`.
   In one that does not, keep the value and set `OXY_TOKEN` on each command.
@@ -225,16 +232,20 @@ cases:
 - **Exit `8`.** The deployment did not return the token you asked for: it
   predates sandbox agent tokens, or returned one for other apps. Nothing was
   printed, and what it minted was revoked.
-- **Exit `7`.** Nobody approved within five minutes. Ask your engineer what
-  the page said. Only Oxy staff holding `develop_apps` and `manage_apps` over
-  the app's org can approve: if the page refused, report what it said and
-  stop. If they missed it, run the command once more.
+- **Exit `7`.** Nobody approved in time (five minutes, or ten with
+  `--no-browser`). Ask your engineer what the page said. Only Oxy staff
+  holding `develop_apps` and `manage_apps` over the app's org can approve: if
+  the page refused, report what it said and stop. If they missed it, run the
+  command once more.
 - **Exit `4`.** The approval code was rejected and nothing was minted. Run the
   command once more, with fewer `--hours` if an organization caps a token's
-  lifetime.
-- **No browser on this machine can open the page** (a remote container, a CI
-  job). The page answers to a local port on the machine `oxyc` runs on, so it
-  cannot be approved from another one.
+  lifetime. With `--no-browser`, exit `4` with `access_denied` means your
+  engineer declined, or the page refused the request: the reason is printed.
+  Report it and stop.
+- **`--no-browser` is an unknown option (exit `2`), or the deployment has no
+  device-code approval (exit `8`).** The CLI or the deployment is too old for
+  a machine no browser can reach. Ask your engineer to update, or to run the
+  command on a machine with a browser and hand you the token.
 
 ## Over MCP
 

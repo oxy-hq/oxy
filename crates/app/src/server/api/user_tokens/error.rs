@@ -77,6 +77,13 @@ pub enum TokenError {
     /// 409 `agent_token_fixed` — an agent token is never renamed, widened,
     /// extended or regenerated.
     AgentTokenFixed,
+    /// 400 `access_denied` — a device-code request the person refused, or
+    /// whose approval was refused under their session. The reason is the
+    /// `error`, as the page said it.
+    AccessDenied(String),
+    /// 400 `expired_token` — a device-code request nobody decided in time
+    /// (RFC 8628's name for it).
+    ExpiredRequest,
     /// 429 `rate_limited` — a public route asked too often from one address.
     /// `retry_after_secs` is sent as `Retry-After`.
     RateLimited { retry_after_secs: u64 },
@@ -220,6 +227,16 @@ impl TokenError {
                     .into(),
                 Some("agent_token_fixed"),
             ),
+            Self::AccessDenied(reason) => (
+                StatusCode::BAD_REQUEST,
+                reason.clone(),
+                Some("access_denied"),
+            ),
+            Self::ExpiredRequest => (
+                StatusCode::BAD_REQUEST,
+                "the request was not approved in time".into(),
+                Some("expired_token"),
+            ),
             Self::RateLimited { .. } => (
                 StatusCode::TOO_MANY_REQUESTS,
                 "too many requests; try again later".into(),
@@ -231,6 +248,14 @@ impl TokenError {
                 None,
             ),
         }
+    }
+}
+
+impl TokenError {
+    /// What the response says, without its status: what a device-code
+    /// request records as the reason it was refused.
+    pub(super) fn message(&self) -> String {
+        self.parts().1
     }
 }
 

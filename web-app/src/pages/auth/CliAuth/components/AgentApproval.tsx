@@ -1,17 +1,17 @@
 import type React from "react";
 import { useState } from "react";
 import { Separator } from "@/components/ui/shadcn/separator";
-import useAuthorizeCli from "@/hooks/api/cliAuth/useAuthorizeCli";
 import { agentMintErrorMessage } from "@/hooks/api/userTokens/tokenErrors";
 import { useTokenOptions } from "@/hooks/api/userTokens/useUserTokens";
 import { AGENT_TOKEN_POWERS, standingWords } from "@/libs/agentToken";
 import { apiStatus } from "@/libs/apiError";
 import { agentMint, reviewAgentAsk } from "../agentReview";
-import type { AgentMintRequest } from "../cliAuthRequest";
+import type { AgentAsk } from "../cliAuthRequest";
 import useApprovalArmed from "../useApprovalArmed";
 import useApprovalKeys from "../useApprovalKeys";
 import AgentRequestSummary from "./AgentRequestSummary";
 import AgentScopeNotice from "./AgentScopeNotice";
+import DeviceCodeCheck from "./DeviceCodeCheck";
 import MintActions from "./MintActions";
 import type { ApprovalProps } from "./MintApproval";
 import MintCaution from "./MintCaution";
@@ -40,42 +40,45 @@ import MintPowers from "./MintPowers";
  * A lifetime out of range or a name too long is refused where it stands, and oxyc is run again
  * with the request put right.
  */
-const AgentApproval: React.FC<ApprovalProps<AgentMintRequest>> = ({
+const AgentApproval: React.FC<ApprovalProps<AgentAsk>> = ({
   request,
   email,
+  submit,
+  userCode,
   onApproved,
   onDeclined,
   onSessionLapsed
 }) => {
   const options = useTokenOptions();
-  const authorize = useAuthorizeCli();
+  // A link's request has no code to compare; a device-code request starts unconfirmed.
+  const [codeMatches, setCodeMatches] = useState(userCode === undefined);
   const [refusal, setRefusal] = useState<string | null>(null);
   // Empty to begin with, whatever oxyc asked: including it is the approver's own act.
   const [includeStanding, setIncludeStanding] = useState(false);
 
-  const review = options.data ? reviewAgentAsk(request.ask, request.hostname, options.data) : null;
-  const mint = review ? agentMint(review, request.ask, includeStanding) : undefined;
+  // A device-code token never carries staff or partner access (the server holds to it), so on
+  // one the request is read as not asking: the sheet says it is not included and offers no box.
+  const ask = userCode ? { ...request.ask, standing: false } : request.ask;
+  const review = options.data ? reviewAgentAsk(ask, request.hostname, options.data) : null;
+  const mint = review ? agentMint(review, ask, includeStanding) : undefined;
   const refused = review !== null && !mint;
   // Exactly what would be sent. The button's words and the second it waits both follow it.
   const withStanding = mint?.standing === true;
   const armed = useApprovalArmed(Boolean(mint), withStanding);
 
   const approve = () => {
-    if (!mint || !armed) return;
+    if (!mint || !armed || !codeMatches) return;
     setRefusal(null);
-    authorize.mutate(
-      { code_challenge: request.codeChallenge, hostname: request.hostname, mint },
-      {
-        onSuccess: ({ code }) => onApproved(code),
-        onError: (error) => {
-          if (apiStatus(error) === 401) return onSessionLapsed();
-          setRefusal(agentMintErrorMessage(error));
-        }
+    submit.send(mint, {
+      onSuccess: onApproved,
+      onError: (error) => {
+        if (apiStatus(error) === 401) return onSessionLapsed();
+        setRefusal(agentMintErrorMessage(error));
       }
-    );
+    });
   };
 
-  useApprovalKeys(authorize.isPending ? undefined : onDeclined);
+  useApprovalKeys(submit.pending ? undefined : onDeclined);
 
   // A server that names no limits can't mint one: there is no request to lay out, only that.
   const unsupported = review?.unsupported === true;
@@ -90,11 +93,11 @@ const AgentApproval: React.FC<ApprovalProps<AgentMintRequest>> = ({
       {review ? (
         !unsupported && (
           <AgentRequestSummary
-            ask={request.ask}
+            ask={ask}
             review={review}
             included={includeStanding}
             onIncludedChange={setIncludeStanding}
-            disabled={authorize.isPending}
+            disabled={submit.pending}
           />
         )
       ) : (
@@ -113,8 +116,17 @@ const AgentApproval: React.FC<ApprovalProps<AgentMintRequest>> = ({
           <Separator className='my-3' />
           <MintCaution
             hostname={request.hostname}
-            command={`oxyc tokens create --agent${request.ask.standing ? " --standing" : ""}`}
+            command={`oxyc tokens create --agent${ask.standing ? " --standing" : ""}${
+              userCode ? " --no-browser" : ""
+            }`}
           />
+          {userCode && (
+            <DeviceCodeCheck
+              code={userCode}
+              onMatchedChange={setCodeMatches}
+              disabled={submit.pending}
+            />
+          )}
         </>
       )}
       <MintActions
@@ -132,8 +144,8 @@ const AgentApproval: React.FC<ApprovalProps<AgentMintRequest>> = ({
           ))
         }
         refusal={refusal}
-        pending={authorize.isPending}
-        canApprove={armed && !authorize.isPending}
+        pending={submit.pending}
+        canApprove={armed && codeMatches && !submit.pending}
         onApprove={approve}
         onCancel={onDeclined}
         approveLabel={

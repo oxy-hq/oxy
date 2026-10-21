@@ -15,6 +15,9 @@
 //! - `POST /api/auth/cli/authorize` and its public `/exchange` — `oxyc login`,
 //!   and the same exchange minting a sandbox agent token ([`sandbox`]) or an
 //!   **agent token** ([`agent`]) the browser session approved ([`cli_login`]);
+//! - `POST /api/auth/cli/device`, `/device/poll` and the session's
+//!   `/device/requests/{user_code}` — the same approvals for a CLI no browser
+//!   can reach, collected by polling ([`device_login`]);
 //! - `/api/admin/standing-tokens` — every personal token that carries
 //!   `platform` or `partner` standing, for the staff who govern staff access:
 //!   list and revoke ([`standing_staff`], mounted by `admin::standing_tokens`).
@@ -39,6 +42,7 @@ pub mod agent;
 pub(crate) mod audit;
 pub mod browser_session;
 pub mod cli_login;
+pub mod device_login;
 pub(crate) mod dto;
 pub mod error;
 pub mod handlers;

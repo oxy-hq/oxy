@@ -12,8 +12,9 @@
  *
  * THE SAME LOOPBACK as the sandbox mint (`tokens-sandbox.ts`), with other
  * parameters. It holds no credential while it runs; the operator approves once
- * in the browser, under their own session; and stdout is the one line
- * `export OXY_TOKEN=…`, printed once.
+ * in the browser, under their own session — or, with `--no-browser`, from any
+ * device by device code — and stdout is the one line `export OXY_TOKEN=…`,
+ * printed once.
  *
  * WHAT IT NEVER DOES: write the credentials file, or revoke another token.
  *
@@ -24,11 +25,13 @@
  */
 
 import { hostname as osHostname } from "node:os";
+import { deviceRound } from "../auth/device.js";
 import {
   type BrowserPurpose,
   browserRound,
   exchangeCliCode,
-  type LoginOptions
+  type LoginOptions,
+  type Minted
 } from "../auth/login.js";
 import { createPkce } from "../auth/pkce.js";
 import { describeExpiry } from "../auth/token-api.js";
@@ -124,6 +127,53 @@ const MINT_CODE_REFUSED = {
 const refuse = (target: string, problem: Mismatch, secret?: string) =>
   discard(target, problem, secret, DISCARD_HINT);
 
+/** The loopback approval: the browser hands a code back, and it is exchanged. */
+async function approvedInBrowser(
+  target: string,
+  opts: LoginOptions,
+  query: string
+): Promise<Minted> {
+  const pkce = createPkce();
+  const callback = await browserRound(target, opts, pkce, { query, purpose: MINT_PURPOSE });
+  // A session token in the callback is a deployment with no exchange at all.
+  // It is the approver's browser session, not something minted: dropped.
+  if (callback.kind === "token") {
+    return refuse(target, {
+      what: unsupportedAgent(target),
+      why: "its /cli-auth page handed back a session token, so it predates revocable CLI tokens"
+    });
+  }
+
+  const minted = await exchangeCliCode(target, callback.code, pkce.verifier, MINT_CODE_REFUSED);
+  if (!minted) {
+    return refuse(target, {
+      what: unsupportedAgent(target),
+      why: "it issued a code and has no exchange route (POST /api/auth/cli/exchange answered 404)"
+    });
+  }
+  return minted;
+}
+
+/** `--no-browser`: approved by device code from any device, and collected by polling. */
+async function approvedByDeviceCode(
+  target: string,
+  opts: LoginOptions,
+  query: string
+): Promise<Minted> {
+  const minted = await deviceRound(target, opts, createPkce(), {
+    query,
+    purpose: MINT_PURPOSE,
+    refused: MINT_CODE_REFUSED
+  });
+  if (!minted) {
+    return refuse(target, {
+      what: unsupportedAgent(target),
+      why: "it has no device-code approval (POST /api/auth/cli/device answered 404)"
+    });
+  }
+  return minted;
+}
+
 /** "staff", "partner" or "staff and partner". */
 const named = (standing: readonly string[]) => standing.join(" and ");
 
@@ -149,29 +199,13 @@ export async function runTokensCreateAgent(
   log.info(
     `Asking ${target} for an agent token: everything the approver can reach` +
       `${ask.standing ? ", with their staff or partner access if they tick it" : ""}, ${ask.hours} h. ` +
-      "Your operator approves it once in the browser."
+      `Your operator approves it once ${opts.noBrowser ? "from any device" : "in the browser"}.`
   );
-  const pkce = createPkce();
-  const callback = await browserRound(target, { ...opts, hostname }, pkce, {
-    query: agentMintQuery(ask),
-    purpose: MINT_PURPOSE
-  });
-  // A session token in the callback is a deployment with no exchange at all.
-  // It is the approver's browser session, not something minted: dropped.
-  if (callback.kind === "token") {
-    return refuse(target, {
-      what: unsupportedAgent(target),
-      why: "its /cli-auth page handed back a session token, so it predates revocable CLI tokens"
-    });
-  }
-
-  const minted = await exchangeCliCode(target, callback.code, pkce.verifier, MINT_CODE_REFUSED);
-  if (!minted) {
-    return refuse(target, {
-      what: unsupportedAgent(target),
-      why: "it issued a code and has no exchange route (POST /api/auth/cli/exchange answered 404)"
-    });
-  }
+  const round = { ...opts, hostname };
+  const query = agentMintQuery(ask);
+  const minted = opts.noBrowser
+    ? await approvedByDeviceCode(target, round, query)
+    : await approvedInBrowser(target, round, query);
   // BEFORE ANYTHING IS PRINTED. See `tokens-agent-verify.ts`.
   const verdict = await verifyAgentToken(target, ask, minted);
   if ("problem" in verdict) return refuse(target, verdict.problem, minted.token);

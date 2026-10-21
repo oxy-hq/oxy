@@ -61,7 +61,7 @@ use oxy_auth::token::credential::source;
 use oxy_auth::token::personal::{self, NewToken};
 use sea_orm::{ConnectionTrait, DatabaseConnection, EntityTrait, TransactionTrait};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
 use super::ManageTokens;
@@ -81,7 +81,7 @@ pub struct AuthorizeBody {
     code_challenge: String,
     hostname: String,
     /// What the code mints instead of the login token. Absent for `oxyc login`.
-    mint: Option<serde_json::Value>,
+    mint: Option<Value>,
 }
 
 #[derive(Serialize)]
@@ -109,14 +109,31 @@ pub async fn authorize(
     let hostname = cli_login::clean_hostname(&body.hostname)
         .ok_or_else(|| TokenError::Invalid("'hostname' must be 1 to 255 characters".into()))?;
     let db = establish_connection().await?;
-    let code = match &body.mint {
+    let code = match approval(&db, &actor, &hostname, body.mint.as_ref()).await? {
         None => cli_login::authorize(&db, actor.id, &challenge, &hostname).await?,
-        Some(mint) if agent_mint::asked_for(mint) => {
-            agent::authorize(&db, &actor, &challenge, &hostname, mint).await?
+        Some(stored) => {
+            cli_login::authorize_mint(&db, actor.id, &challenge, &hostname, stored).await?
         }
-        Some(mint) => authorize_mint(&db, &actor, &challenge, &hostname, mint).await?,
     };
     Ok(Json(AuthorizeResponse { code }))
+}
+
+/// What an approval under the session stores: `None` for `oxyc login`, or the
+/// mint, checked. Shared by the loopback code and the device-code request
+/// (`device_login.rs`): the two differ only in how the CLI collects it.
+pub(super) async fn approval(
+    db: &DatabaseConnection,
+    actor: &RequestActor,
+    hostname: &str,
+    mint: Option<&Value>,
+) -> Result<Option<Value>, TokenError> {
+    match mint {
+        None => Ok(None),
+        Some(mint) if agent_mint::asked_for(mint) => {
+            agent::approve(db, actor, hostname, mint).await.map(Some)
+        }
+        Some(mint) => approve_sandbox(db, actor, hostname, mint).await.map(Some),
+    }
 }
 
 /// The name a CLI-minted sandbox agent token gets when the CLI sent none.
@@ -124,23 +141,20 @@ fn sandbox_token_name(hostname: &str) -> String {
     format!("sandbox agent on {hostname}")
 }
 
-/// Issue a code that mints a sandbox agent token. The mint is checked here,
-/// under the session — its shape, who may mint for each app, and each org's
-/// lifetime cap — and the code stores it with the apps resolved to ids. The
-/// exchange can only answer `invalid_code`, so this is the last place a
-/// refusal can say why.
-async fn authorize_mint(
+/// Check a sandbox agent token's mint under the session — its shape, who may
+/// mint for each app, and each org's lifetime cap — and return it as stored,
+/// with the apps resolved to ids. The CLI's collection can only answer
+/// `invalid_code`, so this is the last place a refusal can say why.
+async fn approve_sandbox(
     db: &DatabaseConnection,
     actor: &RequestActor,
-    challenge: &str,
     hostname: &str,
-    mint: &serde_json::Value,
-) -> Result<String, TokenError> {
+    mint: &Value,
+) -> Result<Value, TokenError> {
     let default_name = sandbox_token_name(hostname);
     let checked = sandbox::check(db, actor, mint, Some(&default_name)).await?;
     sandbox::within_policy(db, &checked, checked.request.expires_at(Utc::now())).await?;
-    let stored = checked.request.stored(&checked.app_ids());
-    Ok(cli_login::authorize_mint(db, actor.id, challenge, hostname, stored).await?)
+    Ok(checked.request.stored(&checked.app_ids()))
 }
 
 /// `POST /auth/cli/exchange` — redeem the code and mint the CLI's token.
@@ -153,18 +167,53 @@ pub async fn exchange(
     let redeemed = cli_login::redeem(&db, &body.code, &body.code_verifier)
         .await?
         .ok_or(TokenError::InvalidCode)?;
-    let actor = redeemer(&db, &redeemed, &headers).await?;
-    let host = &redeemed.hostname;
-    let minted = match &redeemed.mint {
-        None => mint(&db, &actor, host).await?,
-        Some(approved) if agent_mint::asked_for(approved) => {
-            agent::redeem(&db, &actor, approved, host)
-                .await
-                .map_err(no_longer_honoured)?
-        }
-        Some(approved) => mint_sandbox(&db, &actor, approved, host).await?,
-    };
+    let minted = mint_redeemed(&db, &redeemed, &headers, Collected::loopback()).await?;
     Ok(Json(minted.into()))
+}
+
+/// How the CLI collected an approval, and what that lets the token carry.
+pub(super) struct Collected {
+    /// Added to the `token.created` row's detail — empty for the loopback
+    /// exchange, which records what it always has.
+    pub via: Map<String, Value>,
+    /// Whether the token may carry its owner's `platform` and `partner`
+    /// standing. Only a code that came back to the approver's own machine
+    /// may: a device code is collected by whoever started the request, which
+    /// an approver who was sent a link cannot see (RFC 8628 §5.4).
+    pub standing: bool,
+}
+
+impl Collected {
+    /// The loopback exchange: the code only ever reached `127.0.0.1` on the
+    /// approver's machine.
+    pub(super) fn loopback() -> Self {
+        Self {
+            via: Map::new(),
+            standing: true,
+        }
+    }
+}
+
+/// Mint what a collected approval names, as the user who approved it: the
+/// login token, or the sandbox agent token or agent token the approval
+/// checked.
+pub(super) async fn mint_redeemed(
+    db: &DatabaseConnection,
+    redeemed: &Redeemed,
+    headers: &HeaderMap,
+    collected: Collected,
+) -> Result<Minted, TokenError> {
+    let actor = redeemer(db, redeemed, headers).await?;
+    let host = &redeemed.hostname;
+    match &redeemed.mint {
+        None => mint(db, &actor, host, collected).await,
+        Some(approved) if agent_mint::asked_for(approved) => {
+            agent::redeem(db, &actor, approved, host, collected)
+                .await
+                .map_err(no_longer_honoured)
+        }
+        Some(approved) => mint_sandbox(db, &actor, approved, host, collected.via).await,
+    }
 }
 
 /// What the CLI is told when an approved mint is refused at the exchange:
@@ -180,18 +229,27 @@ fn no_longer_honoured(e: TokenError) -> TokenError {
     }
 }
 
+/// `detail` with the collection's own fields added.
+fn with_via(mut detail: Value, via: Map<String, Value>) -> Value {
+    if let Value::Object(fields) = &mut detail {
+        fields.extend(via);
+    }
+    detail
+}
+
 /// Mint the sandbox agent token a code was approved for. Who may mint is
 /// checked again: the approval is up to five minutes old.
 async fn mint_sandbox(
     db: &DatabaseConnection,
     actor: &RequestActor,
-    approved: &serde_json::Value,
+    approved: &Value,
     hostname: &str,
+    via: Map<String, Value>,
 ) -> Result<Minted, TokenError> {
     let checked = sandbox::check(db, actor, approved, None)
         .await
         .map_err(no_longer_honoured)?;
-    let detail = json!({ "hostname": hostname });
+    let detail = with_via(json!({ "hostname": hostname }), via);
     sandbox::create(db, actor, &checked, source::OXYC, detail)
         .await
         .map_err(no_longer_honoured)
@@ -218,9 +276,15 @@ async fn mint(
     db: &DatabaseConnection,
     actor: &RequestActor,
     hostname: &str,
+    collected: Collected,
 ) -> Result<Minted, TokenError> {
     let facts = reach::facts(db, &authz::caller_of(actor)).await?;
-    let (platform, partner) = reach::standing_held(&facts);
+    let (platform, partner) = if collected.standing {
+        reach::standing_held(&facts)
+    } else {
+        (false, false)
+    };
+    let via = collected.via;
     let name = cli_login::token_name(hostname);
 
     let txn = db.begin().await?;
@@ -242,10 +306,13 @@ async fn mint(
         action: audit::CREATED,
         token: &minted.row,
         orgs: service::reach_of(&txn, &minted.row).await?,
-        detail: json!({
-            "expires_at": audit::rfc3339(minted.row.expires_at),
-            "hostname": hostname,
-        }),
+        detail: with_via(
+            json!({
+                "expires_at": audit::rfc3339(minted.row.expires_at),
+                "hostname": hostname,
+            }),
+            via,
+        ),
         change: None,
     }
     .record_with(&txn, actor, access_audit::created(&access))

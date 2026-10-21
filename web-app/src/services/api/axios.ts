@@ -64,6 +64,12 @@ const publicAPIPaths = [
   "/live"
 ];
 
+/**
+ * The device-code approval (`oxyc … --no-browser`): the same reason as `/auth/cli/authorize`
+ * above. Its routes carry the user code in the path, so they are matched by prefix.
+ */
+const isCliDevicePath = (url: string): boolean => url.startsWith("/auth/cli/device/");
+
 export const apiClient = axios.create({
   baseURL: apiBaseURL,
   // Send + receive cookies on every request. Without this, the browser
@@ -137,7 +143,7 @@ const makeResponseErrorHandler = () => {
       error.message = detachedHead;
     }
 
-    if (status === 401 && !publicAPIPaths.includes(url)) {
+    if (status === 401 && !publicAPIPaths.includes(url) && !isCliDevicePath(url)) {
       // Sweep persisted per-user state alongside the token; a hard navigate
       // to /login lets Zustand rehydrate the next user from a clean slate.
       clearAuthScopedStorage();

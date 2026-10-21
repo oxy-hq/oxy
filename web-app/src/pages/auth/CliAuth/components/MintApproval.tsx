@@ -1,15 +1,16 @@
 import type React from "react";
 import { useState } from "react";
 import { Separator } from "@/components/ui/shadcn/separator";
-import useAuthorizeCli from "@/hooks/api/cliAuth/useAuthorizeCli";
 import { sandboxMintErrorMessage } from "@/hooks/api/userTokens/tokenErrors";
 import { useTokenOptions } from "@/hooks/api/userTokens/useUserTokens";
 import { apiStatus } from "@/libs/apiError";
 import { sandboxAgentPowers, sandboxApps, sandboxLimits } from "@/libs/sandboxAgentToken";
-import type { MintRequest } from "../cliAuthRequest";
+import type { CliMintRequest } from "@/types/apiToken";
+import type { MintAsk } from "../cliAuthRequest";
 import { reviewMintAsk } from "../mintReview";
 import useApprovalArmed from "../useApprovalArmed";
 import useApprovalKeys from "../useApprovalKeys";
+import DeviceCodeCheck from "./DeviceCodeCheck";
 import MintActions from "./MintActions";
 import MintCaution from "./MintCaution";
 import MintLead from "./MintLead";
@@ -20,12 +21,31 @@ import MintRequestSummary from "./MintRequestSummary";
 
 const POWERS = sandboxAgentPowers("these apps");
 
-export interface ApprovalProps<Request> {
-  request: Request;
+/**
+ * How an approval is sent: traded for a single-use code that goes back to oxyc's loopback, or
+ * recorded on the device-code request oxyc is polling (`oxyc … --no-browser`). The sheet is the
+ * same either way; only the page around it knows which.
+ */
+export interface ApprovalSubmit {
+  /** Send it. `onSuccess` is handed the code for the loopback, or `null` when oxyc polls. */
+  send: (
+    mint: CliMintRequest,
+    handlers: { onSuccess: (code: string | null) => void; onError: (error: Error) => void }
+  ) => void;
+  /** In flight: both buttons are off until it answers. */
+  pending: boolean;
+}
+
+export interface ApprovalProps<Ask> {
+  /** The computer asking, and what it asked for. */
+  request: { hostname: string; ask: Ask };
   /** Who the token will act as. */
   email?: string;
-  /** Handed the single-use code oxyc exchanges for the token. */
-  onApproved: (code: string) => void;
+  submit: ApprovalSubmit;
+  /** A device-code request's code: Approve waits until the person says it matches. */
+  userCode?: string;
+  /** Handed the single-use code oxyc exchanges for the token, or `null` when oxyc polls. */
+  onApproved: (code: string | null) => void;
   onDeclined: () => void;
   onSessionLapsed: () => void;
 }
@@ -42,15 +62,18 @@ export interface ApprovalProps<Request> {
  * the button is off until the request has been in front of the person for a moment. Nothing on
  * the page takes focus on load.
  */
-const MintApproval: React.FC<ApprovalProps<MintRequest>> = ({
+const MintApproval: React.FC<ApprovalProps<MintAsk>> = ({
   request,
   email,
+  submit,
+  userCode,
   onApproved,
   onDeclined,
   onSessionLapsed
 }) => {
   const options = useTokenOptions();
-  const authorize = useAuthorizeCli();
+  // A link's request has no code to compare; a device-code request starts unconfirmed.
+  const [codeMatches, setCodeMatches] = useState(userCode === undefined);
   // Worded when the refusal arrives, while the app it names is still among the options.
   const [refusal, setRefusal] = useState<string | null>(null);
 
@@ -62,21 +85,18 @@ const MintApproval: React.FC<ApprovalProps<MintRequest>> = ({
   const armed = useApprovalArmed(Boolean(mint));
 
   const approve = () => {
-    if (!mint || !armed) return;
+    if (!mint || !armed || !codeMatches) return;
     setRefusal(null);
-    authorize.mutate(
-      { code_challenge: request.codeChallenge, hostname: request.hostname, mint },
-      {
-        onSuccess: ({ code }) => onApproved(code),
-        onError: (error) => {
-          if (apiStatus(error) === 401) return onSessionLapsed();
-          setRefusal(sandboxMintErrorMessage(error, apps, limits, "cli"));
-        }
+    submit.send(mint, {
+      onSuccess: onApproved,
+      onError: (error) => {
+        if (apiStatus(error) === 401) return onSessionLapsed();
+        setRefusal(sandboxMintErrorMessage(error, apps, limits, "cli"));
       }
-    );
+    });
   };
 
-  useApprovalKeys(authorize.isPending ? undefined : onDeclined);
+  useApprovalKeys(submit.pending ? undefined : onDeclined);
 
   return (
     <MintPage
@@ -102,7 +122,17 @@ const MintApproval: React.FC<ApprovalProps<MintRequest>> = ({
         <>
           <MintPowers can={POWERS.can} cannot={POWERS.cannot} />
           <Separator className='my-3' />
-          <MintCaution hostname={request.hostname} command='oxyc tokens create --sandbox-agent' />
+          <MintCaution
+            hostname={request.hostname}
+            command={`oxyc tokens create --sandbox-agent${userCode ? " --no-browser" : ""}`}
+          />
+          {userCode && (
+            <DeviceCodeCheck
+              code={userCode}
+              onMatchedChange={setCodeMatches}
+              disabled={submit.pending}
+            />
+          )}
         </>
       )}
       <MintActions
@@ -114,8 +144,8 @@ const MintApproval: React.FC<ApprovalProps<MintRequest>> = ({
           )
         }
         refusal={refusal}
-        pending={authorize.isPending}
-        canApprove={armed && !authorize.isPending}
+        pending={submit.pending}
+        canApprove={armed && codeMatches && !submit.pending}
         onApprove={approve}
         onCancel={onDeclined}
       />

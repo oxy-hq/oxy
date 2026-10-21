@@ -5,7 +5,9 @@
  * THE MINT IS THE ONE COMMAND AN AGENT RUNS TO GET ITS OWN CREDENTIAL. It
  * holds no credential while it runs: minting is browser-session-only on the
  * server, so this opens the same PKCE loopback `oxyc login` uses, with four
- * more parameters saying what is being asked for. The agent's operator reads
+ * more parameters saying what is being asked for — or, with `--no-browser`,
+ * asks for the same approval by device code (`auth/device.ts`), for an agent
+ * whose machine no browser can reach. The agent's operator reads
  * the apps and the lifetime on the page and approves once. What comes back is
  * printed, once, as `export OXY_TOKEN=…` on stdout — everything else is on
  * stderr, so `eval "$(oxyc tokens create --sandbox-agent …)"` sets the variable
@@ -18,11 +20,13 @@
 
 import { hostname as osHostname } from "node:os";
 import { forgetSandboxTokens } from "../apps/sandbox-token.js";
+import { deviceRound } from "../auth/device.js";
 import {
   type BrowserPurpose,
   browserRound,
   exchangeCliCode,
-  type LoginOptions
+  type LoginOptions,
+  type Minted
 } from "../auth/login.js";
 import { createPkce } from "../auth/pkce.js";
 import { describeExpiry, revokeCallingToken } from "../auth/token-api.js";
@@ -227,6 +231,53 @@ const MINT_CODE_REFUSED = {
   hint: `run \`${MINT_PURPOSE.retry}\` again — with fewer --hours if an organization caps token lifetime`
 } as const;
 
+/** The loopback approval: the browser hands a code back, and it is exchanged. */
+async function approvedInBrowser(
+  target: string,
+  opts: LoginOptions,
+  query: string
+): Promise<Minted> {
+  const pkce = createPkce();
+  const callback = await browserRound(target, opts, pkce, { query, purpose: MINT_PURPOSE });
+  // A session token in the callback is a deployment with no exchange at all.
+  // It is the approver's browser session, not something minted: dropped.
+  if (callback.kind === "token") {
+    return discard(target, {
+      what: unsupported(target),
+      why: "its /cli-auth page handed back a session token, so it predates revocable CLI tokens"
+    });
+  }
+
+  const minted = await exchangeCliCode(target, callback.code, pkce.verifier, MINT_CODE_REFUSED);
+  if (!minted) {
+    return discard(target, {
+      what: unsupported(target),
+      why: "it issued a code and has no exchange route (POST /api/auth/cli/exchange answered 404)"
+    });
+  }
+  return minted;
+}
+
+/** `--no-browser`: approved by device code from any device, and collected by polling. */
+async function approvedByDeviceCode(
+  target: string,
+  opts: LoginOptions,
+  query: string
+): Promise<Minted> {
+  const minted = await deviceRound(target, opts, createPkce(), {
+    query,
+    purpose: MINT_PURPOSE,
+    refused: MINT_CODE_REFUSED
+  });
+  if (!minted) {
+    return discard(target, {
+      what: unsupported(target),
+      why: "it has no device-code approval (POST /api/auth/cli/device answered 404)"
+    });
+  }
+  return minted;
+}
+
 /**
  * Mint a sandbox agent token and print it.
  *
@@ -249,29 +300,13 @@ export async function runTokensCreateSandboxAgent(
 
   log.info(
     `Asking ${target} for a sandbox agent token: ${ask.apps.join(", ")}, ${ask.hours} h. ` +
-      "Your operator approves it once in the browser."
+      `Your operator approves it once ${opts.noBrowser ? "from any device" : "in the browser"}.`
   );
-  const pkce = createPkce();
-  const callback = await browserRound(target, { ...opts, hostname }, pkce, {
-    query: sandboxMintQuery(ask),
-    purpose: MINT_PURPOSE
-  });
-  // A session token in the callback is a deployment with no exchange at all.
-  // It is the approver's browser session, not something minted: dropped.
-  if (callback.kind === "token") {
-    return discard(target, {
-      what: unsupported(target),
-      why: "its /cli-auth page handed back a session token, so it predates revocable CLI tokens"
-    });
-  }
-
-  const minted = await exchangeCliCode(target, callback.code, pkce.verifier, MINT_CODE_REFUSED);
-  if (!minted) {
-    return discard(target, {
-      what: unsupported(target),
-      why: "it issued a code and has no exchange route (POST /api/auth/cli/exchange answered 404)"
-    });
-  }
+  const round = { ...opts, hostname };
+  const query = sandboxMintQuery(ask);
+  const minted = opts.noBrowser
+    ? await approvedByDeviceCode(target, round, query)
+    : await approvedInBrowser(target, round, query);
   // BEFORE ANYTHING IS PRINTED. See `tokens-sandbox-verify.ts`.
   const problem = await mismatch(target, ask, minted);
   if (problem) return discard(target, problem, minted.token);

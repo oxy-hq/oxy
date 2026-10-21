@@ -2,6 +2,8 @@ import type { ApiKeyActivityResponse } from "@/types/apiKey";
 import type {
   CliAuthorizeRequest,
   CliAuthorizeResponse,
+  CliDeviceApproveRequest,
+  CliDeviceRequest,
   CreateSandboxAgentTokenRequest,
   CreateTokenRequest,
   ExtendBody,
@@ -89,5 +91,24 @@ export const CliAuthService = {
   async authorize(request: CliAuthorizeRequest): Promise<CliAuthorizeResponse> {
     const response = await apiClient.post<CliAuthorizeResponse>("/auth/cli/authorize", request);
     return response.data;
+  },
+
+  /** A pending device-code request (`oxyc … --no-browser`), by the code oxyc printed. */
+  async deviceRequest(userCode: string): Promise<CliDeviceRequest> {
+    const response = await apiClient.get<CliDeviceRequest>(devicePath(userCode));
+    return response.data;
+  },
+
+  /** Approve it under the session. oxyc collects the token by polling. */
+  async approveDevice(userCode: string, request: CliDeviceApproveRequest): Promise<void> {
+    await apiClient.post(`${devicePath(userCode)}/approve`, request);
+  },
+
+  /** Decline it. oxyc stops waiting at its next poll. */
+  async denyDevice(userCode: string): Promise<void> {
+    await apiClient.post(`${devicePath(userCode)}/deny`);
   }
 };
+
+const devicePath = (userCode: string): string =>
+  `/auth/cli/device/requests/${encodeURIComponent(userCode)}`;

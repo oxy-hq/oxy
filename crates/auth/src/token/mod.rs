@@ -27,7 +27,8 @@
 //!   — reading and writing it, and which orgs it blocks a token in;
 //! - [`access`] — the request bodies of those routes, parsed and checked;
 //! - [`grant_plan`] — how an edit's `grants` replaces the stored set;
-//! - [`cli_login`] — the `oxyc login` PKCE code store;
+//! - [`cli_login`] — the `oxyc login` PKCE code store; [`device_login`] — the
+//!   same login's device-code requests, for a CLI no browser can reach;
 //! - [`browser_session`] — the ticket a token trades for a browser session,
 //!   and the session, which authenticates as that token;
 //! - [`mobile_login`] — the Oxygen mobile app's PKCE code, bound to its
@@ -49,6 +50,8 @@ pub mod ci;
 pub mod ci_mint;
 pub mod cli_login;
 pub mod credential;
+mod device_ask;
+pub mod device_login;
 pub mod dispatch;
 pub mod exchange;
 pub mod format;

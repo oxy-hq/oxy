@@ -54,6 +54,7 @@ import { LOCAL_WORKSPACE_ID } from "./libs/utils/constants";
 import { setLastWorkspaceId } from "./libs/utils/lastWorkspace";
 import AppPage from "./pages/app";
 import CliAuth from "./pages/auth/CliAuth";
+import CliAuthDevice from "./pages/auth/CliAuth/Device";
 import DevLogin from "./pages/auth/DevLogin";
 import GoogleCallback from "./pages/auth/GoogleCallback";
 import MagicLinkCallback from "./pages/auth/MagicLinkCallback";
@@ -602,6 +603,10 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             oxyc: the session token), bouncing through /login first when not
             yet signed in. */}
         <Route path='/cli-auth' element={<CliAuth />} />
+        {/* `oxyc … --no-browser`: the same approval for an oxyc no browser can
+            reach. Public for the same reason; the decision is recorded on the
+            device-code request, and oxyc collects it by polling. */}
+        <Route path='/cli-auth/device' element={<CliAuthDevice />} />
 
         {/* Oxygen mobile app sign-in — public for the same reason: asks the
             signed-in person, then hands the app's `oxygen://` redirect a

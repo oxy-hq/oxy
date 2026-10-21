@@ -230,6 +230,10 @@ const TABLES: &[(&str, Placement)] = &[
         Control("hashed single-use codes for the oxyc login exchange"),
     ),
     (
+        "cli_device_requests",
+        Control("pending oxyc device-code approvals, hashed and swept within the hour"),
+    ),
+    (
         "compiled_references",
         Control("compiled cross-entity reference graph"),
     ),

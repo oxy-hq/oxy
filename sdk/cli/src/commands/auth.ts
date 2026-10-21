@@ -12,7 +12,7 @@ import { describeSandboxToken } from "../apps/sandbox-token.js";
 import { isAgentTokenRow, variableCredentialSteps } from "../auth/agent-token.js";
 import { clearCredential, loadCredential } from "../auth/credentials.js";
 import { keepPastExit } from "../auth/exit-revoke.js";
-import { adminStatusLine, login } from "../auth/login.js";
+import { adminStatusLine, type LoginOptions, login } from "../auth/login.js";
 import {
   describeExpiry,
   describeReach,
@@ -44,7 +44,8 @@ import { runAssumeStart } from "./assume.js";
 export async function runLogin(
   ctx: Context,
   envs: string[],
-  assume?: { org?: string; reason: string }
+  assume?: { org?: string; reason: string },
+  opts: LoginOptions = {}
 ): Promise<void> {
   const targets = envs.length > 0 ? envs.map((e) => ctx.withEnv(e)) : [ctx];
   const failures: string[] = [];
@@ -52,7 +53,7 @@ export async function runLogin(
   for (const one of targets) {
     const target = one.target();
     try {
-      const { user } = await login(target);
+      const { user } = await login(target, opts);
       process.stderr.write(`${out.green(`Logged in as ${user.email} (${target}).`)}\n`);
       process.stderr.write(`${adminStatusLine(user)}\n`);
       if (user.expires_at) {

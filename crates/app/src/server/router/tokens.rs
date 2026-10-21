@@ -15,13 +15,16 @@
 //! has no credential yet, redeems it ([`build_public_token_routes`]).
 //! `oxyc login-link` is the same pair pointed the other way: a token asks for
 //! a ticket, and a browser, which has no credential yet, redeems it.
+//! `oxyc … --no-browser` splits the same way: the CLI starts and polls a
+//! device-code request on the public side, and the browser decides it under
+//! its session.
 
 use axum::routing::{delete, get, patch, post};
 
 use crate::server::api::auth::mobile;
 use crate::server::api::org_api_access::handlers as org_handlers;
 use crate::server::api::user_tokens::{
-    browser_session, cli_login, handlers, introspect, leak, options,
+    browser_session, cli_login, device_login, handlers, introspect, leak, options,
 };
 
 use super::AppState;
@@ -53,6 +56,21 @@ pub(super) fn build_token_routes(app_state: &AppState) -> RoleRouter {
         // `oxyc login`, step one. Session-only like the rest: it is the first
         // half of minting a token.
         .route_fleet("/auth/cli/authorize", post(cli_login::authorize))
+        // `oxyc … --no-browser`: the page reads a device-code request and
+        // decides it, under the session. Postgres only (`cli_device_requests`,
+        // and what an approval checks).
+        .route_fleet(
+            "/auth/cli/device/requests/{user_code}",
+            get(device_login::describe),
+        )
+        .route_fleet(
+            "/auth/cli/device/requests/{user_code}/approve",
+            post(device_login::approve),
+        )
+        .route_fleet(
+            "/auth/cli/device/requests/{user_code}/deny",
+            post(device_login::deny),
+        )
         // The Oxygen mobile app's sign-in, step one: the same session-only
         // approval, for a code bound to an `oxygen://` redirect URI.
         .route_fleet("/auth/mobile/authorize", post(mobile::authorize))
@@ -142,6 +160,11 @@ pub(super) fn build_org_api_access_routes(app_state: &AppState) -> RoleRouter {
 pub(super) fn build_public_token_routes(app_state: &AppState) -> RoleRouter {
     RoleRouter::new(app_state.clone())
         .route_fleet("/auth/cli/exchange", post(cli_login::exchange))
+        // The device-code flow's CLI half: start a request, then poll it. No
+        // credential yet; rate-limited per client. Postgres only
+        // (`cli_device_requests`, then what the exchange writes).
+        .route_fleet("/auth/cli/device", post(device_login::start))
+        .route_fleet("/auth/cli/device/poll", post(device_login::poll))
         // The mobile app's half of its sign-in, and renewing the session it
         // gets. No credential yet, or one only these check: Postgres only
         // (`cli_auth_codes`, `users`).

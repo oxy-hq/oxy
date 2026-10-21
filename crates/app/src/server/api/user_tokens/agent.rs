@@ -37,12 +37,12 @@ use entity::api_tokens;
 use oxy_app_core::audit::RequestActor;
 use oxy_auth::token::access::Access as AskedAccess;
 use oxy_auth::token::agent::{self as mint, MintRequest};
-use oxy_auth::token::cli_login;
 use oxy_auth::token::credential::source;
 use sea_orm::DatabaseConnection;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
+use super::cli_login::Collected;
 use super::error::TokenError;
 use super::reach;
 use super::service::{self, Minted, NewPersonal};
@@ -89,38 +89,40 @@ fn token_for(
     }
 }
 
-/// `POST /auth/cli/authorize` with a `mint` of `kind: "agent"`: issue a code
-/// that mints the token. The mint is checked here, under the session — its
-/// shape, and everything a new all-access personal token is held to — and the
-/// code stores what was approved. The exchange can only answer `invalid_code`,
-/// so this is the last place a refusal can say why.
-pub(super) async fn authorize(
+/// A `mint` of `kind: "agent"`, approved under the session (`POST
+/// /auth/cli/authorize`, or a device-code approval): checked here — its shape,
+/// and everything a new all-access personal token is held to — and returned as
+/// the code or request stores it. The CLI's collection can only answer
+/// `invalid_code`, so this is the last place a refusal can say why.
+pub(super) async fn approve(
     db: &DatabaseConnection,
     actor: &RequestActor,
-    challenge: &str,
     hostname: &str,
     body: &Value,
-) -> Result<String, TokenError> {
+) -> Result<Value, TokenError> {
     let request = parse(body, Some(&default_name(hostname)))?;
     let facts = reach::facts(db, &authz::caller_of(actor)).await?;
     let token = token_for(&request, &facts, hostname, Utc::now());
     service::admit_personal(db, &facts, &token).await?;
-    let stored = request.stored();
-    Ok(cli_login::authorize_mint(db, actor.id, challenge, hostname, stored).await?)
+    Ok(request.stored())
 }
 
-/// Mint the token a code was approved for, as `actor` — the user the code was
-/// issued to. Everything is asked again: the approval is up to five minutes
-/// old, and the standing is the one held now.
+/// Mint the token an approval named, as `actor` — the user who approved it.
+/// Everything is asked again: the approval is minutes old, and the standing is
+/// the one held now — and none at all when the way it was collected allows
+/// none (a device code: `Collected::standing`).
 pub(super) async fn redeem(
     db: &DatabaseConnection,
     actor: &RequestActor,
     approved: &Value,
     hostname: &str,
+    collected: Collected,
 ) -> Result<Minted, TokenError> {
-    let request = parse(approved, None)?;
+    let mut request = parse(approved, None)?;
+    request.standing &= collected.standing;
     let facts = reach::facts(db, &authz::caller_of(actor)).await?;
-    let token = token_for(&request, &facts, hostname, Utc::now());
+    let mut token = token_for(&request, &facts, hostname, Utc::now());
+    token.detail.extend(collected.via);
     service::mint_personal(db, actor, &facts, token).await
 }
 

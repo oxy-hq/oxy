@@ -1,6 +1,7 @@
 //! What an approved agent mint is minted as, with no database.
 
 use chrono::Duration;
+use oxy_auth::token::cli_login;
 use oxy_authz::{Cap, PartnerStanding, PlatformRole, PlatformStanding, Scope};
 use uuid::Uuid;
 

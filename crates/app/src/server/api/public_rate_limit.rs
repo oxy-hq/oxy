@@ -1,7 +1,8 @@
 //! A per-client rate limit on the public token routes (API-tokens design §8
-//! Phase 5): `POST /api/auth/tokens/revoke-leaked` and
-//! `POST /api/auth/oidc/exchange`. Neither has a credential in front of it,
-//! so each carries its own budget per client address.
+//! Phase 5): `POST /api/auth/tokens/revoke-leaked`,
+//! `POST /api/auth/oidc/exchange`, and the device-code pair
+//! `POST /api/auth/cli/device` and `/device/poll`. None has a credential in
+//! front of it, so each carries its own budget per client address.
 //!
 //! The same token bucket the magic-link request uses (`governor`), in process:
 //! a coarse brake per replica, not a shared quota — a Postgres write per
@@ -33,6 +34,13 @@ pub const PER_MINUTE: u32 = 60;
 pub enum PublicRoute {
     RevokeLeaked,
     OidcExchange,
+    /// Starting a device-code request writes a row: the brake on filling the
+    /// table from one address.
+    DeviceStart,
+    /// Polling one. Each request is also held to its own interval in the row
+    /// (`oxy_auth::token::device_login::poll`); this caps an address polling
+    /// many.
+    DevicePoll,
 }
 
 /// One limiter: a bucket per `(route, client)`.

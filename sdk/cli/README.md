@@ -149,7 +149,7 @@ route's surface and fleet role.
 ## Authentication
 
 ```bash
-oxyc login [--env <e>] [--login-env <e...>] [--assume <org> -r <why>]
+oxyc login [--env <e>] [--login-env <e...>] [--assume <org> -r <why>] [--no-browser]
 oxyc whoami [--json]        # who the credential is, and what it can reach
 oxyc token                  # print the bearer, for a raw curl
 oxyc login-link [--next <path>] [--json] [--open]   # a one-time URL that signs a browser in
@@ -158,8 +158,8 @@ oxyc tokens list [--json]   # your personal access tokens
 oxyc tokens revoke <id>
 oxyc tokens revoke --current   # end the token in OXY_TOKEN
 oxyc tokens create          # opens Account → Personal access tokens
-oxyc tokens create --sandbox-agent --app <org>/<app> [--app …] [--hours 8] [--name …]
-oxyc tokens create --agent [--standing] [--hours 8] [--name …]
+oxyc tokens create --sandbox-agent --app <org>/<app> [--app …] [--hours 8] [--name …] [--no-browser]
+oxyc tokens create --agent [--standing] [--hours 8] [--name …] [--no-browser]
 ```
 
 **An agent runs on its own token, never on the person's `oxyc login`.** Which
@@ -263,6 +263,23 @@ everything else is on stderr. It holds no credential while it runs, never
 writes the credentials file, and revokes no other token. `--app` is
 `<org>/<app>` and repeats; arguments are checked before the browser opens
 (exit `2`). Only staff who can open the app's sandboxes can approve.
+
+**`--no-browser`** is the same approval for a machine no browser can reach
+(a cloud container, a CI runner, a remote dev box), where the loopback's
+`127.0.0.1` port is not the approver's. Instead of opening a page, `oxyc`
+asks for a device code (`POST /api/auth/cli/device`) and prints, on stderr,
+a URL (`<deployment>/cli-auth/device?code=…`) and an eight-letter code. The
+operator opens the URL on any device where they are signed in, types the
+code from the terminal (the page never shows it), and approves; `oxyc` polls
+(`POST /api/auth/cli/device/poll`, with the PKCE verifier) and prints the
+token exactly as above. A request lives ten minutes. A decline, or a refusal
+on the page, stops the command with exit `4` (`access_denied`) and the
+reason; nobody deciding in time is exit `7`. It works the same for
+`tokens create --agent` and for `oxyc login`, with one difference: a token
+approved by device code **never carries staff or partner access**, since
+whoever started the request collects it and the approver cannot see who that
+is. `--standing --no-browser` is a usage error (exit `2`), and a login made
+this way reaches only what its approver's organization memberships do.
 
 What comes back is checked before anything is printed: it must be an
 `oxy_sbx_`, described as `sandbox_agent` and not all-access, for exactly the

@@ -259,6 +259,10 @@ function buildProgram(): Command {
         [] as string[]
       )
       .option("--assume [slug|uuid|url]", "act as this org immediately after logging in")
+      .option(
+        "--no-browser",
+        "approve by device code from any device, for a machine no browser can reach (a container, CI, a remote box)"
+      )
       .option("-r, --reason <why>", "why you are acting as that org — recorded in the audit log")
   ).action(async (opts: Record<string, unknown>) => {
     const extra = (opts.loginEnv as string[]) ?? [];
@@ -303,7 +307,10 @@ function buildProgram(): Command {
             org: typeof assumeFlag === "string" && assumeFlag ? assumeFlag : undefined,
             reason: String(opts.reason)
           };
-    await runLogin(createContext(globals(opts)), envs, assume);
+    // Commander's `--no-browser` is `browser: false`; it defaults to true.
+    await runLogin(createContext(globals(opts)), envs, assume, {
+      noBrowser: opts.browser === false
+    });
   });
 
   const assume = program
@@ -528,6 +535,10 @@ function buildProgram(): Command {
         "--name <label>",
         "with --agent or --sandbox-agent: its name in the token list and the audit log"
       )
+      .option(
+        "--no-browser",
+        "with --agent or --sandbox-agent: approve by device code from any device, for a machine no browser can reach (a container, CI, a remote box)"
+      )
       .addHelpText(
         "after",
         "\nWhich one an agent mints:\n\n" +
@@ -539,13 +550,18 @@ function buildProgram(): Command {
           "neither revokes another. After a mint, pass --token-env OXY_TOKEN to each command:\n" +
           "one that lost the variable then exits 4 instead of running on a cached login.\n\n" +
           '    eval "$(oxyc tokens create --sandbox-agent --app acme/store --env dev)"\n' +
-          '    eval "$(oxyc tokens create --agent --env dev)"\n'
+          '    eval "$(oxyc tokens create --agent --env dev)"\n\n' +
+          "Where no browser can reach this machine (a cloud container, CI, a remote box), add\n" +
+          "--no-browser: oxyc prints a URL and a code, the operator approves from any device,\n" +
+          "and the token is printed the same way.\n"
       )
   ).action(async (opts: Record<string, unknown>) => {
     const ctx = createContext(globals(opts));
     const apps = opts.app as string[];
     const hours = opts.hours as string | undefined;
     const name = opts.name as string | undefined;
+    // Commander's `--no-browser` is `browser: false`; it defaults to true.
+    const noBrowser = opts.browser === false;
     // Two different tokens. Asked for both, neither is minted.
     if (opts.agent && opts.sandboxAgent) {
       throw usageError(
@@ -559,6 +575,12 @@ function buildProgram(): Command {
         "a sandbox agent token never carries staff or partner access, and plain `oxyc tokens create` opens the web page"
       );
     }
+    if (opts.standing && noBrowser) {
+      throw usageError(
+        "--standing is not available with --no-browser",
+        "a token approved by device code never carries staff or partner access — mint it where a browser can open, or drop --standing"
+      );
+    }
     if (opts.agent) {
       if (apps.length > 0) {
         throw usageError(
@@ -566,18 +588,22 @@ function buildProgram(): Command {
           "an agent token reaches everything its approver does: it names no apps"
         );
       }
-      await runTokensCreateAgent(ctx, { standing: Boolean(opts.standing), hours, name });
+      await runTokensCreateAgent(
+        ctx,
+        { standing: Boolean(opts.standing), hours, name },
+        { noBrowser }
+      );
       return;
     }
     if (opts.sandboxAgent) {
-      await runTokensCreateSandboxAgent(ctx, { apps, hours, name });
+      await runTokensCreateSandboxAgent(ctx, { apps, hours, name }, { noBrowser });
       return;
     }
-    // The three flags mean nothing without it, and silently opening the page
+    // The flags mean nothing without it, and silently opening the page
     // would look like the mint had been asked for.
-    if (apps.length > 0 || hours !== undefined || name !== undefined) {
+    if (apps.length > 0 || hours !== undefined || name !== undefined || noBrowser) {
       throw usageError(
-        "--app, --hours and --name are only valid with --agent or --sandbox-agent",
+        "--app, --hours, --name and --no-browser are only valid with --agent or --sandbox-agent",
         "plain `oxyc tokens create` opens the page that creates a personal access token"
       );
     }

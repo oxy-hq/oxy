@@ -24,6 +24,7 @@ mod blocked_reach;
 mod browser_session;
 mod cli_login;
 mod deactivated_owner;
+mod device_login;
 mod discovery;
 mod email_identity;
 mod extend;
