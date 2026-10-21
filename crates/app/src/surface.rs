@@ -36,6 +36,14 @@ pub use crate::server::api::middlewares::workspace_context::{
     WorkspaceManagerReadOnly, WorkspaceManagerWorkingCopy, WorkspacePath, enqueue_lazy_compile,
 };
 
+/// The project context a workspace's agents run with: its configuration, its
+/// database secrets and the compiled revision, built the way the platform builds
+/// it for every data-plane call. The document library's answering agent runs
+/// against an org's workspace this way; it is not a custom app. The custom-app
+/// gate's decisions are in `oxy_custom_apps::gate`; this builder is the part
+/// that composes `OxyProjectContext`, which only `oxy-app` can name.
+pub use crate::server::api::custom_apps_gates::build_project_context;
+
 /// Session, token and request helpers shared by every sign-in path.
 pub mod session {
     pub use crate::server::api::auth::{

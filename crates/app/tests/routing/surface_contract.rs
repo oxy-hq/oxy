@@ -22,7 +22,6 @@ use std::path::{Path, PathBuf};
 /// `domain-boundaries.md`).
 const BACKLOG: &[(&str, &str)] = &[
     // custom-apps vertical
-    ("api-documents", "server::api::custom_apps_gates"),
     ("api-documents", "server::api::custom_apps_storage"),
     // frontline completion: this logic belongs IN api-frontline
     ("api-frontline", "server::api::frontline_grants"),

@@ -27,7 +27,9 @@ use axum::http::{HeaderMap, Request, StatusCode};
 use axum::routing::post;
 use entity::{revisions, workspace_compiled_configs};
 use oxy_app::agentic_wiring::thread_owner::OxyThreadOwnerLookup;
-use oxy_app::server::api::custom_apps_gates::{CustomAppContext, check_custom_app_gates};
+use oxy_app::server::api::custom_apps_gates::{
+    CustomAppContext, CustomAppContextExt, check_custom_app_gates,
+};
 use oxy_app::server::api::projects::agent_ask::caller::{
     CallerRunResolver, RUN_CALLER_KEY, RunCaller,
 };

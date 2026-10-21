@@ -39,7 +39,9 @@ use tracing::{error, instrument, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::server::api::custom_apps_gates::{check_custom_app_gates, parse_versioned_body};
+use crate::server::api::custom_apps_gates::{
+    CustomAppContextExt, check_custom_app_gates, parse_versioned_body,
+};
 use crate::server::api::projects::query::{QueryResponse, json_objects_to_table};
 use crate::server::api::typed_stream::typed_stream_to_json_objects;
 use crate::server::router::AppState;

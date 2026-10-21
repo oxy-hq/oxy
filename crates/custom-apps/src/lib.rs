@@ -19,6 +19,8 @@
 //! - `environments`, `publish_authz`: pointer writes and publish authority.
 //! - `staging_pin`: a draft build's semantic pin: read it, validate it at publish,
 //!   resolve it for a non-production request, and the promote drift notice.
+//! - `gate`: the data-plane gate's decision half (user, workspace row, access
+//!   verdict) and the context it resolves; `oxy-app` keeps the request-facing entry.
 
 pub mod agent_built;
 pub use oxy_app_core::audience;
@@ -28,6 +30,7 @@ pub mod cache;
 pub mod env_resolve;
 pub mod environments;
 pub mod function_trigger;
+pub mod gate;
 pub mod non_production;
 pub mod publish_authz;
 pub mod staging_pin;

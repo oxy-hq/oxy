@@ -13,7 +13,9 @@ entity = { workspace = true }
 oxy-app-core = { workspace = true }
 oxy-auth = { workspace = true }
 oxy-authz = { workspace = true }
+oxy-platform = { workspace = true }
 oxy-server-authz = { workspace = true }
+oxy-shared = { workspace = true }
 
 chrono = { workspace = true }
 sea-orm = { workspace = true }

@@ -22,6 +22,7 @@ use oxy_app::server::api::admin::app_publish_tokens as publish_tokens;
 use oxy_app::server::api::admin::apps::access::set_app_access;
 use oxy_app::server::api::admin::apps::handlers as admin;
 use oxy_app::server::api::admin::apps::storage;
+use oxy_app::server::api::admin::apps::test_notification;
 use oxy_app::server::api::custom_apps_agent_refusal::REFUSED_WRITES;
 use oxy_app::server::api::custom_apps_env_schedules::handlers as env_schedules;
 use oxy_app::server::api::custom_apps_promote::handlers as promote;
@@ -128,6 +129,11 @@ fn fixed_state_writes() -> Vec<Write> {
         write("PUT", "/customer-apps/{id}/access", put(set_app_access)),
         write(
             "POST",
+            "/customer-apps/{id}/notification-test",
+            post(test_notification::send_test_notification),
+        ),
+        write(
+            "POST",
             "/admin/app-publish-tokens",
             post(publish_tokens::create_token),
         ),
@@ -158,6 +164,7 @@ fn body_for(agent: &Agent, path: &str, staging: Uuid) -> Option<Value> {
             "workflow_ref": ".github/workflows/oxy-publish.yml", "environment": "production",
         }),
         "/customer-apps/{id}/access" => json!({ "visibility": "restricted" }),
+        "/customer-apps/{id}/notification-test" => json!({ "kind": "list_overdue" }),
         "/customer-apps/{id}/environments/{name}/schedules" => json!({ "enabled": true }),
         "/admin/app-publish-tokens" => json!({ "name": "by token" }),
         batch if batch.starts_with("/customer-apps/batch/") => json!({ "ids": [app] }),

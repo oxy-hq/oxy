@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{HeaderMap, Request, StatusCode};
-use oxy_app::server::api::custom_apps_gates::check_custom_app_gates;
+use oxy_app::server::api::custom_apps_gates::{CustomAppContextExt, check_custom_app_gates};
 use oxy_app::server::api::projects::automation_run::task::PROCEDURE_RUN_KIND;
 use sea_orm::ConnectionTrait;
 use serde_json::json;
