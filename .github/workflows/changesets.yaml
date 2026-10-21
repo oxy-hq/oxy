@@ -67,6 +67,8 @@ jobs:
               - "scripts/ci/verify-workspace-lints.py"
               # Same for the memory watermark the `test` task runs.
               - "scripts/ci/mem-watermark.sh"
+              # nextest's test groups and retries, and the hakari config.
+              - ".config/**"
               - "**/Cargo.lock"
             # web-app and the roots it shares with everything else in the pnpm
             # workspace.

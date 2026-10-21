@@ -118,10 +118,11 @@ retries = 2
 
 # `oxy-api-custom-apps`' integration group (the custom-app tests, which were oxy-app's
 # `custom_apps` binary). The coarse rule is kept: the whole binary is `db-per-test`
-# but the two modules that open no database, which keep full parallelism.
-# `staging_preview_cookie_retired` calls `api_router(..)` and is serialized below.
+# but the modules that do not use a per-test database, excluded here. `route_roles`
+# keeps full parallelism; `public_routes`, `custom_app_functions_fixture` and
+# `staging_preview_cookie_retired` are serialized below.
 [[profile.default.overrides]]
-filter = "kind(test) & package(=oxy-api-custom-apps) & binary(=integration) & !test(/^(route_roles|public_routes|staging_preview_cookie_retired)::/)"
+filter = "kind(test) & package(=oxy-api-custom-apps) & binary(=integration) & !test(/^(route_roles|public_routes|custom_app_functions_fixture|staging_preview_cookie_retired)::/)"
 test-group = "db-per-test"
 retries = 2
 
@@ -197,10 +198,13 @@ filter = "kind(test) & package(=oxy-app) & (binary(=authz) | binary(=slack) | bi
 test-group = "serial-db"
 retries = 2
 
-# The one module of `oxy-api-custom-apps`' integration binary that builds
-# `api_router(..)` (see the `projects_query` note above).
+# The modules of `oxy-api-custom-apps`' integration binary that
+# `shared_db_registry` reads as reaching the shared database: the one that builds
+# `api_router(..)` (see the `projects_query` note above), and `public_routes` and
+# `custom_app_functions_fixture`, which only name `flat_api_router()` (the scan
+# matches `api_router(` as a substring). Pinned rather than weakening the scan.
 [[profile.default.overrides]]
-filter = "kind(test) & package(=oxy-api-custom-apps) & binary(=integration) & test(/^(staging_preview_cookie_retired)::/)"
+filter = "kind(test) & package(=oxy-api-custom-apps) & binary(=integration) & test(/^(public_routes|custom_app_functions_fixture|staging_preview_cookie_retired)::/)"
 test-group = "serial-db"
 retries = 2
 
