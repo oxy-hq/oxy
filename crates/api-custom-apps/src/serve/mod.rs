@@ -59,6 +59,7 @@ use oxy_app_core::function_seam::{FunctionQueryExecutor, FunctionRequest};
 use oxy_custom_apps::env_resolve::{EnvironmentBuilds, resolve_environment};
 
 mod headers;
+mod live_build;
 use oxy_custom_apps::resolve;
 pub(crate) mod rewrite;
 mod sources;
@@ -374,6 +375,17 @@ impl ServeContext {
                 web_manifest_for(&self.request.db, &self.runtime, app, &self.headers).await
             }
             Reserved::MonogramIcon => monogram_icon_for(app),
+            // Answered before view and SLI recording, like the beacon: a tab
+            // polling for a publish is not a page view and not traffic.
+            Reserved::LiveBuild => {
+                live_build::live_build_for(
+                    &self.request.db,
+                    app,
+                    &self.environment,
+                    &self.request.environments,
+                )
+                .await
+            }
             Reserved::Beacon => {
                 ingest_beacon(
                     body,
@@ -805,6 +817,9 @@ enum Reserved {
     /// `GET __oxy/icon.svg` — the platform monogram, the icon every app has
     /// whether or not its author declared one.
     MonogramIcon,
+    /// `GET __oxy/build` — the build this app serves now, polled by a
+    /// long-open tab to notice a publish. See `live_build`.
+    LiveBuild,
     /// A platform object that lives *inside the build* rather than being
     /// synthesised here — today only the asset manifest. Falls through to the
     /// ordinary source dispatch.
@@ -830,12 +845,14 @@ fn classify_reserved(name: &str, method: &axum::http::Method) -> Reserved {
     let manifest = oxy_custom_apps::asset_manifest::ASSET_MANIFEST_PATH.trim_start_matches(prefix);
     let webmanifest = crate::client::WEB_MANIFEST_PATH.trim_start_matches(prefix);
     let monogram = crate::client::MONOGRAM_ICON_PATH.trim_start_matches(prefix);
+    let live_build = crate::client::LIVE_BUILD_PATH.trim_start_matches(prefix);
 
     match (name, method) {
         (n, &axum::http::Method::GET) if n == sw => Reserved::ServiceWorker,
         (n, &axum::http::Method::POST) if n == beacon => Reserved::Beacon,
         (n, &axum::http::Method::GET) if n == webmanifest => Reserved::WebManifest,
         (n, &axum::http::Method::GET) if n == monogram => Reserved::MonogramIcon,
+        (n, &axum::http::Method::GET) if n == live_build => Reserved::LiveBuild,
         (n, &axum::http::Method::GET) if n == manifest => Reserved::BuildObject,
         _ => Reserved::Unknown,
     }
@@ -1169,6 +1186,20 @@ mod reserved_tests {
             classify_reserved("asset-manifest.json", &Method::GET),
             Reserved::BuildObject
         );
+    }
+
+    /// The live-build probe is a GET-only platform endpoint. A POST is an
+    /// unknown resource like any other wrong verb, never a fall-through.
+    #[test]
+    fn the_live_build_probe_is_get_only() {
+        assert_eq!(
+            classify_reserved("build", &Method::GET),
+            Reserved::LiveBuild
+        );
+        assert_eq!(classify_reserved("build", &Method::POST), Reserved::Unknown);
+        // Not a prefix match: an app path that merely starts with the name is
+        // not the probe.
+        assert_eq!(classify_reserved("builds", &Method::GET), Reserved::Unknown);
     }
 
     /// The manifest is written into the build prefix at publish, so it must

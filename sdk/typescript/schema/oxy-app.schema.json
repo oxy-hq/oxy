@@ -537,6 +537,18 @@
         "serviceWorker": {
           "type": "boolean",
           "description": "Opt out of the platform service worker Oxy registers at `<base>/__oxy/sw.js`. It precaches your build's entry assets and serves content-hashed files cache-first, so a repeat load of a published app is near-instant.\n\nSet `false` only if your app ships its own service worker (two workers cannot both control the same scope) or genuinely must never be cached. There is nothing to configure to opt *in* — a normal build is precached automatically, and a bundle that inlines everything into one HTML file simply has nothing to precache, which is fine. Default: `true`."
+        },
+        "autoUpdate": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string",
+              "const": "prompt"
+            }
+          ],
+          "description": "How a tab left open across a publish takes the new build. Oxy's injected runtime always notices a publish (within ~5 minutes) and announces it with a cancelable `oxy:update-available` event; this decides what happens next.\n\n- `true` — reload at a safe moment (a navigation, two idle minutes with   nothing focused, or coming back after 10+ minutes away), never while the   app holds `useBusyWhile` / `holdUpdates`.\n- `false` — never reload automatically; read `useAppUpdate()` and offer it.\n- `\"prompt\"` — the shell shows \"Update ready\"; if nobody taps it within 24   hours the runtime reloads at the next safe moment, so an unattended   kiosk still converges.\n\nOmitted: the platform default, which an operator sets. A broken lazy chunk after a publish is recovered with a reload in every mode but the platform's `off`."
         }
       },
       "additionalProperties": false,

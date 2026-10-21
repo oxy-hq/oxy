@@ -444,6 +444,15 @@ pub struct CustomAppLogRecord {
     pub environment: String,
 }
 
+/// How many recent sessions of one app were last seen running one build. See
+/// `ObservabilityStore::get_fleet_build_sessions`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppBuildSessions {
+    /// The `app_builds.id` the sessions reported.
+    pub build_id: String,
+    pub sessions: u64,
+}
+
 /// Success/failure counts for one app over one window — the raw material for
 /// an availability SLI and its error budget.
 #[derive(Debug, Clone, PartialEq)]

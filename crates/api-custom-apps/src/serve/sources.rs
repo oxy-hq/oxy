@@ -83,6 +83,11 @@ pub(crate) struct AppRuntimeConfig {
     /// IS an input to the rendered document, which is why the memoized render
     /// (`custom_apps_html_cache`) keys on it.
     pub environment: String,
+    /// What the runtime does about a new build: `off`, `observe`, `auto` or
+    /// `prompt` (`oxy_custom_apps::updates::runtime_mode`). Process-wide by default
+    /// and narrowed per BUILD by its manifest in `render_html` — never per
+    /// viewer, so the memoized HTML key stays valid.
+    pub updates: &'static str,
 }
 
 impl AppRuntimeConfig {
@@ -111,6 +116,10 @@ impl AppRuntimeConfig {
                 .map(|id| id.to_string())
                 .unwrap_or_default(),
             environment: environment.name(),
+            updates: oxy_custom_apps::updates::runtime_mode(
+                oxy_custom_apps::updates::platform_mode(),
+                oxy_custom_apps::updates::AppUpdatePolicy::Platform,
+            ),
         }
     }
 }
@@ -509,6 +518,12 @@ pub(super) fn render_html(
     if let Some(m) = &manifest {
         runtime.service_worker = m.client.service_worker;
         runtime.analytics = m.client.analytics;
+        // Per BUILD, like the two above — never per viewer — so the memoized
+        // render keyed by build stays valid.
+        runtime.updates = oxy_custom_apps::updates::runtime_mode(
+            oxy_custom_apps::updates::platform_mode(),
+            m.client.auto_update,
+        );
     }
     let rewritten = rewrite_bundle_base_path(bytes, &runtime.base_path, app_id);
     let body = Bytes::from(inject_app_config(&rewritten, &runtime, resolved_path));
@@ -848,6 +863,7 @@ mod tests {
             analytics: true,
             build_id: String::new(),
             environment: "production".to_string(),
+            updates: "observe",
         }
     }
 
@@ -1106,6 +1122,7 @@ mod tests {
         manifest.client = asset_manifest::ClientPrefs {
             service_worker: false,
             analytics: false,
+            auto_update: oxy_custom_apps::updates::AppUpdatePolicy::Prompt,
         };
         let rendered = render_html(
             b"<html><head></head></html>",
@@ -1117,6 +1134,9 @@ mod tests {
         let body = String::from_utf8_lossy(&rendered.body);
         assert!(body.contains("\"serviceWorker\":false"), "{body}");
         assert!(body.contains("\"analytics\":false"), "{body}");
+        // `performance.autoUpdate: "prompt"` reaches the runtime (the platform
+        // default, unset in tests, is `observe`, which an app may narrow).
+        assert!(body.contains("\"updates\":\"prompt\""), "{body}");
 
         // …and the default is both on, so an app that says nothing is
         // instrumented. That is the point of the feature.
@@ -1130,5 +1150,6 @@ mod tests {
         let body = String::from_utf8_lossy(&on.body);
         assert!(body.contains("\"serviceWorker\":true"));
         assert!(body.contains("\"analytics\":true"));
+        assert!(body.contains("\"updates\":\"observe\""), "{body}");
     }
 }

@@ -27,6 +27,9 @@ mod artifact_cache;
 /// runs whether or not the feature that compiles `host` is on.
 /// Who can reach an app — the rule `ctx.org.*` and `ctx.notify` share.
 pub use oxy_custom_apps::audience;
+/// `x-oxy-live-build` on every `/fn` answer, and `409 ClientBuildStale` for a
+/// stale page's call to a function the live build lacks.
+mod build_handshake;
 /// Whose call this is — the scope every per-call key (result cache,
 /// idempotency record, rate-limit bucket) is built from, environment included.
 mod call_scope;
@@ -1179,29 +1182,64 @@ async fn invoke_function(
         caller: &outcome.caller,
         cached: &outcome.environments,
     };
-    let admitted = pipeline::admit(&db, app, &environment, function_name, door)
-        .await
-        .map_err(|e| e.into_response(function_name))?;
-    let call = admit_route_call(&db, &outcome, &admitted, &request).await?;
-    let admission = admitted.admission.clone();
-    let prepared = pipeline::prepare(&db, app, admission, admitted.build_id, function_name)
-        .await
-        .map_err(|e| e.into_response(function_name))?;
-    let invocation_id = match acquire_route_invocation(&db, &call, admitted.build_id).await {
-        Acquire::Run(id) => id,
-        Acquire::Return(response) => return Ok(*response),
-    };
-    let run = RouteRun {
-        db: &db,
-        outcome: &outcome,
-        request: &request,
-        admitted: &admitted,
-        call: &call,
-        invocation_id,
-        query_exec,
-        preagg,
-    };
-    Ok(run_route(run, prepared).await)
+    let admitted = admit_route(&db, app, &environment, &request, door).await?;
+    // Every answer from here on names the build it ran against
+    // (`build_handshake`): a page on an older build reads it and asks its
+    // update agent to check now. The block is the rest of the call, so an early
+    // return inside it still passes through the stamp.
+    let live = admitted.build_id;
+    let answered: Result<Response, Response> = async {
+        let call = admit_route_call(&db, &outcome, &admitted, &request).await?;
+        let admission = admitted.admission.clone();
+        let prepared = pipeline::prepare(&db, app, admission, admitted.build_id, function_name)
+            .await
+            .map_err(|e| e.into_response(function_name))?;
+        let invocation_id = match acquire_route_invocation(&db, &call, admitted.build_id).await {
+            Acquire::Run(id) => id,
+            Acquire::Return(response) => return Ok(*response),
+        };
+        let run = RouteRun {
+            db: &db,
+            outcome: &outcome,
+            request: &request,
+            admitted: &admitted,
+            call: &call,
+            invocation_id,
+            query_exec,
+            preagg,
+        };
+        Ok(run_route(run, prepared).await)
+    }
+    .await;
+    answered
+        .map(|r| build_handshake::with_live_build(r, live))
+        .map_err(|r| build_handshake::with_live_build(r, live))
+}
+
+/// [`pipeline::admit`] for a route call. A function the live build lacks,
+/// asked for by a page that says it runs a different build, is answered
+/// `409 ClientBuildStale` rather than a bare 404 (`build_handshake`): the
+/// page is stale, not broken.
+async fn admit_route(
+    db: &sea_orm::DatabaseConnection,
+    app: &entity::apps::Model,
+    environment: &AppEnvironment,
+    request: &RouteRequest<'_>,
+    door: pipeline::Door<'_>,
+) -> Result<pipeline::Admitted, Response> {
+    let function_name = request.function_name;
+    match pipeline::admit(db, app, environment, function_name, door).await {
+        Ok(admitted) => Ok(admitted),
+        Err(pipeline::PrepareError::FunctionNotFound { build }) => {
+            let client = build_handshake::client_build(request.headers);
+            let answer =
+                build_handshake::stale_client_response(client, build).unwrap_or_else(|| {
+                    pipeline::PrepareError::FunctionNotFound { build }.into_response(function_name)
+                });
+            Err(build_handshake::with_live_build(answer, build))
+        }
+        Err(e) => Err(e.into_response(function_name)),
+    }
 }
 
 /// The checks a route call passes before it is authenticated: they read

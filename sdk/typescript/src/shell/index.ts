@@ -18,6 +18,8 @@ export type { AnswerChartProps, ChartBlock, ChartBlockConfig } from "./AnswerCha
 export { AnswerChart } from "./AnswerChart";
 export type { AskDockProps } from "./AskDock";
 export { AskDock } from "./AskDock";
+export type { KioskIdleOptions, KioskIdleState } from "./kioskIdle";
+export { useKioskIdle } from "./kioskIdle";
 export { workspaceLogoUrl } from "./logoUrl";
 export { OXY_MARK_PATH, OxygenFactoryMark, OxyMark } from "./marks";
 export type { OxyShellProps } from "./OxyShell";
@@ -45,4 +47,5 @@ export type {
 export { fetchThreadTranscript, useThreadHistory } from "./threadHistory";
 export type { TraceItem, TraceStep, TraceStepStatus } from "./trace";
 export { buildTraceSteps } from "./trace";
+export { UpdatePill } from "./UpdatePill";
 export { WorkspaceTile } from "./WorkspaceTile";

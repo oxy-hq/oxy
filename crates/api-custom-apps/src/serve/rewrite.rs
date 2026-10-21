@@ -241,7 +241,7 @@ pub(crate) fn inject_app_config(
     );
     let snippet = format!(
         "{manifest_link}<script>window.__OXY_APP__=JSON.parse('{escaped_for_js_string}');</script>{}",
-        crate::client::runtime_script_tag()
+        crate::client::runtime_script_tag_for(runtime.updates)
     );
 
     let needle = b"</head>";
@@ -289,6 +289,7 @@ mod tests {
             analytics: true,
             build_id: String::new(),
             environment: "production".to_string(),
+            updates: "observe",
         }
     }
 
@@ -331,6 +332,26 @@ mod tests {
         );
         let s = std::str::from_utf8(&out).unwrap();
         assert!(s.contains(r#"crossorigin="use-credentials""#));
+    }
+
+    /// A build whose mode is `off` gets the runtime without its update agent.
+    #[test]
+    fn inject_app_config_ships_the_update_agent_only_when_on() {
+        let html = b"<html><head></head></html>";
+        let path = std::path::Path::new("index.html");
+        let on = inject_app_config(html, &fake_runtime(), path);
+        let off_rt = AppRuntimeConfig {
+            updates: "off",
+            ..fake_runtime()
+        };
+        let off = inject_app_config(html, &off_rt, path);
+        let (on, off) = (
+            std::str::from_utf8(&on).unwrap(),
+            std::str::from_utf8(&off).unwrap(),
+        );
+        assert!(on.contains("__oxy/build"));
+        assert!(!off.contains("__oxy/build"));
+        assert!(off.contains("__oxy/beacon"));
     }
 
     #[test]

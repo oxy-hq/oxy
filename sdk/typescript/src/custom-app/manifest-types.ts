@@ -682,6 +682,24 @@ export interface OxyAppPerformanceManifest {
    * simply has nothing to precache, which is fine. Default: `true`.
    */
   serviceWorker?: boolean;
+  /**
+   * How a tab left open across a publish takes the new build. Oxy's injected
+   * runtime always notices a publish (within ~5 minutes) and announces it with
+   * a cancelable `oxy:update-available` event; this decides what happens next.
+   *
+   * - `true` — reload at a safe moment (a navigation, two idle minutes with
+   *   nothing focused, or coming back after 10+ minutes away), never while the
+   *   app holds `useBusyWhile` / `holdUpdates`.
+   * - `false` — never reload automatically; read `useAppUpdate()` and offer it.
+   * - `"prompt"` — the shell shows "Update ready"; if nobody taps it within 24
+   *   hours the runtime reloads at the next safe moment, so an unattended
+   *   kiosk still converges.
+   *
+   * Omitted: the platform default, which an operator sets. A broken lazy chunk
+   * after a publish is recovered with a reload in every mode but the
+   * platform's `off`.
+   */
+  autoUpdate?: boolean | "prompt";
 }
 
 /** How long assets under a given prefix are kept. */

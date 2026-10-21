@@ -50,6 +50,7 @@ pub mod custom_apps_env_schedules;
 pub mod custom_apps_functions;
 pub mod custom_apps_migrations;
 pub mod custom_apps_nonproduction;
+pub mod custom_apps_open_builds;
 /// `oxyc promote` / `oxyc rollback`, and the one function that moves
 /// production's pointer for every writer.
 pub mod custom_apps_promote;
@@ -108,6 +109,7 @@ pub use oxy_custom_apps::storage as custom_apps_storage;
 pub use oxy_custom_apps::sync as custom_apps_sync;
 pub use oxy_custom_apps::telemetry as custom_apps_telemetry;
 pub use oxy_custom_apps::tracking as custom_apps_tracking;
+pub use oxy_custom_apps::updates as custom_apps_updates;
 pub use oxy_custom_apps::usage_airhouse as custom_apps_usage_airhouse;
 pub use oxy_custom_apps::usage_queue as custom_apps_usage_queue;
 

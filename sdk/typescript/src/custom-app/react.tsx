@@ -45,6 +45,7 @@ import { isSafeLinkHref, isTableStart, splitTableRow } from "./markdown";
 import { getCached, sharedQuery } from "./query-cache";
 import { paramsToSend, type QueryParam } from "./query-params";
 import { newTraceparent, withInvocationIds } from "./traceparent";
+import { holdUpdates, withClientBuild } from "./updates";
 
 // ── Context ─────────────────────────────────────────────────────────────────
 
@@ -179,7 +180,11 @@ export function OxyAppProvider(props: OxyAppProviderProps): React.JSX.Element {
   // put this in state because it should never change after mount (same
   // reasoning as manifestOptions).
   const fetcher = React.useMemo(
-    () => withBackendBase(withAppHeader(fetcherProp ?? defaultFetcher, backendUrl), backendUrl),
+    () =>
+      withBackendBase(
+        withClientBuild(withAppHeader(fetcherProp ?? defaultFetcher, backendUrl), backendUrl),
+        backendUrl
+      ),
     [fetcherProp, backendUrl]
   );
   const [state, setState] = React.useState<OxyAppContextValue>({ status: "loading", fetcher });
@@ -511,6 +516,9 @@ export function useFunction<Data = unknown>(name: string): UseFunctionResult<Dat
         appSlug
       )}/fn/${encodeURIComponent(name)}`;
       setState((s) => ({ ...s, isLoading: true, error: null }));
+      // A function call in flight is work an automatic reload would cut off —
+      // often a write. Hold updates for its whole life, stream included.
+      const release = holdUpdates(`function ${name}`);
       try {
         // In-flight dedup: concurrent identical invokes (a double-click, or two
         // components) share ONE request — never a memoized result, since a
@@ -552,6 +560,8 @@ export function useFunction<Data = unknown>(name: string): UseFunctionResult<Dat
         const logs = (e as FunctionError).logs ?? [];
         setState((s) => ({ ...s, isLoading: false, error: e, logs }));
         throw e;
+      } finally {
+        release();
       }
     },
     [resolved, fetcher, name]

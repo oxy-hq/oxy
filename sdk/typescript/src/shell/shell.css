@@ -436,6 +436,26 @@
   }
 }
 
+/* ─── Update ready pill (prompt mode, or an installed PWA) ──────────────── */
+
+.oxy-updatepill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--oxy-shell-link) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--oxy-shell-link) 10%, transparent);
+  padding: 0.125rem 0.625rem;
+  font-family: var(--oxy-shell-font);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--oxy-shell-link);
+  cursor: pointer;
+}
+
+.oxy-updatepill:hover {
+  background: color-mix(in srgb, var(--oxy-shell-link) 18%, transparent);
+}
+
 /* ─── Tooltip (Radix content, portaled into the shell scope) ────────────── */
 
 .oxy-shell-tooltip {

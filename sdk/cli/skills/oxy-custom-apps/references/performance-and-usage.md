@@ -94,6 +94,52 @@ false` stops only the *client* runtime — Oxy still records one view row per na
 server-side, so the Activity tab never goes dark. Reach for these rarely: the defaults are
 the fast, observable path.
 
+### A tab left open across a publish (automatic — and what it can cost you)
+
+Oxy's injected runtime also watches for a newer build. Every app gets this with no bundle
+code, so an app that keeps work in memory has to know about it:
+
+- **It notices a publish within ~5 minutes.** A visible tab polls `__oxy/build`, and checks
+  again when it comes back to the foreground or online. When the live build differs, it
+  fires a cancelable `oxy:update-available` event on `window`.
+- **A broken lazy chunk after a publish reloads the page — in every mode except the
+  platform's `off`.** A route the tab never opened asks for a chunk the new build no
+  longer has; rather than white-screen, the runtime checks `__oxy/build` and, if the
+  build moved, reloads onto it. That reload **discards in-memory state** unless the app
+  holds `useBusyWhile` / `holdUpdates`, an input is focused, or it cancels the
+  `oxy:chunk-stale` event.
+- **Whether a tab reloads by itself is `performance.autoUpdate`.** The platform default is
+  set by the operator (announce only, today). Set it per app:
+
+```jsonc
+{ "performance": { "autoUpdate": true } }   // reload at a safe moment: a navigation,
+                                            // 2 idle minutes with nothing focused, or a
+                                            // return after 10+ minutes away
+{ "performance": { "autoUpdate": false } }  // never reload by itself; offer it with useAppUpdate
+{ "performance": { "autoUpdate": "prompt" } } // shell shows "Update ready"; reloads at the
+                                              // next safe moment if nobody taps it in 24 h
+```
+
+**The rule: wrap unsaved in-memory work.** A checklist half filled, a form not yet saved,
+a write in flight — hold updates while it is dirty, and the runtime will not reload under
+it (a held token older than 12 h is ignored, so a leak cannot pin a tab forever):
+
+```tsx
+import { useAppUpdate, useBusyWhile } from "@oxy-hq/sdk";
+
+useBusyWhile(isDirty, "checklist not saved");   // or: const release = holdUpdates("…")
+
+const { available, apply } = useAppUpdate();    // offer the update in your own UI
+{available && <button onClick={() => apply()}>Update now</button>}
+```
+
+`useFunction` already holds updates for the life of each call. `UpdatePill` (from
+`@oxy-hq/sdk/shell`) is the ready-made "Update ready" chip; `useKioskIdle` signs a kiosk
+out after the device's idle timeout, which is also a full reload onto the live build.
+An app's own `beforeunload` "leave this page?" prompt still applies. When the viewer
+chooses to stay, the runtime does not reload onto that build by itself again, but
+`apply()` and the chip still work.
+
 **Two gotchas that read as bugs:**
 - **`oxy-` is a reserved event-name prefix.** `useTrackEvent("oxy-…")` is refused with a
   400 — that namespace is the platform's own instrumentation. Name your events anything

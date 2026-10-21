@@ -50,13 +50,13 @@ fn router() -> Router {
     )
 }
 
-struct Sent {
-    status: StatusCode,
-    headers: header::HeaderMap,
-    body: String,
+pub(super) struct Sent {
+    pub(super) status: StatusCode,
+    pub(super) headers: header::HeaderMap,
+    pub(super) body: String,
 }
 
-async fn send(request: Request<Body>) -> Sent {
+pub(super) async fn send(request: Request<Body>) -> Sent {
     let response = router().oneshot(request).await.expect("oneshot");
     let status = response.status();
     let headers = response.headers().clone();
@@ -70,7 +70,7 @@ async fn send(request: Request<Body>) -> Sent {
     }
 }
 
-async fn get(uri: &str) -> Sent {
+pub(super) async fn get(uri: &str) -> Sent {
     send(Request::builder().uri(uri).body(Body::empty()).unwrap()).await
 }
 
@@ -86,7 +86,7 @@ async fn post_json(uri: &str, body: &str) -> Sent {
     .await
 }
 
-fn header_of(sent: &Sent, name: &str) -> Option<String> {
+pub(super) fn header_of(sent: &Sent, name: &str) -> Option<String> {
     sent.headers
         .get(name)
         .and_then(|v| v.to_str().ok())
@@ -131,14 +131,14 @@ async fn org_id(db: &DatabaseConnection, slug: &str) -> Uuid {
         .id
 }
 
-async fn seeded_local_member() -> DatabaseConnection {
+pub(super) async fn seeded_local_member() -> DatabaseConnection {
     let db = test_db().await;
     seed::seed_demo(Some(examples_path())).await.expect("seed");
     add_guest_to_org(&db, org_id(&db, "local").await).await;
     db
 }
 
-fn base() -> String {
+pub(super) fn base() -> String {
     format!("/customer-apps/local/{APP_SLUG}")
 }
 

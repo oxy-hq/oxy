@@ -198,6 +198,16 @@ export {
 } from "./react";
 // World-model hooks (graph / instances / driver-tree)
 export { readJsonSseStream } from "./sse";
+export type { AppUpdateState } from "./update-hooks";
+export { useAppUpdate, useBusyWhile } from "./update-hooks";
+export type { OxyUpdateAgent, OxyUpdateStatus } from "./updates";
+export {
+  CLIENT_BUILD_HEADER,
+  holdUpdates,
+  LIVE_BUILD_HEADER,
+  readUpdateAgent,
+  withClientBuild
+} from "./updates";
 export type {
   UseMeasureBreakdownResult,
   UseWorldModelGraphResult,

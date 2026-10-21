@@ -117,6 +117,10 @@ pub struct AppHealthRow {
     /// `None` means no established rhythm to compare against.
     pub baseline: Option<u64>,
     pub window_minutes: u32,
+    /// Sessions in the last day on the live build vs older builds, from the
+    /// runtime's `oxy-update` / `app-ready` rows. `not_measured` is its own
+    /// status, never folded into `all_live`.
+    pub open_builds: crate::custom_apps_open_builds::OpenBuilds,
 }
 
 #[derive(Debug, Serialize)]
@@ -187,7 +191,8 @@ pub async fn get_fleet_health(
 
     let keys: Vec<AppKey> = rows.iter().map(|a| (a.id, a.org_id)).collect();
     let fleet = evaluate_fleet(&keys).await;
-    let (apps, summary) = build_rows(&rows, &org_slugs, &fleet, q.needs_attention());
+    let (mut apps, summary) = build_rows(&rows, &org_slugs, &fleet, q.needs_attention());
+    attach_open_builds(&db, &rows, &mut apps).await;
 
     Ok(Json(FleetHealthResponse {
         apps,
@@ -197,6 +202,39 @@ pub async fn get_fleet_health(
         evaluated_at: chrono::Utc::now().to_rfc3339(),
         observability_configured: oxy_observability::global::get_global().is_some(),
     }))
+}
+
+/// Which builds each app's recent sessions run, from one grouped ClickHouse
+/// query for the page (rows already carry `not_measured` until this answers).
+async fn attach_open_builds(
+    db: &sea_orm::DatabaseConnection,
+    rows: &[apps::Model],
+    out: &mut [AppHealthRow],
+) {
+    use crate::custom_apps_open_builds as open_builds;
+    // The live build is production's `app_environments` row, read for the whole
+    // page in one query. A failed read degrades to "not measured" for the page
+    // rather than failing the fleet view over a secondary line.
+    let ids: Vec<Uuid> = rows.iter().map(|a| a.id).collect();
+    let pointers = crate::custom_apps_environments::fixed_pointers_batch(db, &ids)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("fleet health: production pointers lookup failed: {e}");
+            Default::default()
+        });
+    let targets: Vec<open_builds::OpenBuildsTarget> = rows
+        .iter()
+        .map(|a| {
+            let live = pointers.get(&a.id).and_then(|p| p.production);
+            (a.org_id, a.id, live)
+        })
+        .collect();
+    let open = open_builds::for_apps(&targets).await;
+    for row in out {
+        if let Some(found) = open.get(&row.app_id) {
+            row.open_builds = found.clone();
+        }
+    }
 }
 
 /// Whether apps in scope were left off this page.
@@ -286,6 +324,7 @@ fn build_rows(
             failed: window.map(|w| w.failed).unwrap_or(0),
             baseline: assessed.and_then(|a| a.baseline),
             window_minutes: TRAFFIC_WINDOW_MINUTES,
+            open_builds: crate::custom_apps_open_builds::OpenBuilds::not_measured(),
         });
     }
 

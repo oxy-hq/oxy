@@ -22,6 +22,7 @@ import { ShellPortalContext, useShellPortalContainer } from "./portal";
 import { type RailItem, ShellRail } from "./ShellRail";
 import { type ShellContextData, useShellContext } from "./shellContext";
 import { Breadcrumb, SystemIndicator, TopBar, WorkspaceClock } from "./TopBar";
+import { UpdatePill } from "./UpdatePill";
 import { WorkspaceTile } from "./WorkspaceTile";
 
 /** Home/HQ glyph (lucide "house" outline, inlined). */
@@ -272,6 +273,7 @@ export function OxyShell({
               }
               right={
                 <>
+                  <UpdatePill />
                   <SystemIndicator />
                   <WorkspaceClock />
                   {topBarExtra}

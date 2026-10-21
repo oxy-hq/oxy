@@ -3,7 +3,7 @@
 /**
  * Execution tests for the two browser scripts the server injects into every
  * custom app — `sw.js` and `runtime.js`, which live in
- * `crates/app/src/server/api/custom_apps_client/` and reach the browser via
+ * `crates/api-custom-apps/src/client/` and reach the browser via
  * `include_str!`.
  *
  * ## Why they are tested from here
@@ -26,7 +26,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const CLIENT_DIR = join(__dirname, "../../../crates/app/src/server/api/custom_apps_client");
+const CLIENT_DIR = join(__dirname, "../../../crates/api-custom-apps/src/client");
 const readScript = (name: string) => readFileSync(join(CLIENT_DIR, name), "utf8");
 
 // ── sw.js harness ───────────────────────────────────────────────────────────

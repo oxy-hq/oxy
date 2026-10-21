@@ -37,6 +37,14 @@ pub const SERVICE_WORKER_PATH: &str = "__oxy/sw.js";
 /// Bundle-relative path the client runtime posts analytics batches to.
 pub const BEACON_PATH: &str = "__oxy/beacon";
 
+/// Bundle-relative path the client runtime polls to learn which build is live.
+///
+/// Answers the `app_builds.id` UUID — the same id `window.__OXY_APP__.buildId`
+/// carries — so a long-open tab can compare like with like. `x-oxy-build` and
+/// the asset manifest name the build by its `build_id` *string*, which the page
+/// never holds. See `serve::live_build`.
+pub const LIVE_BUILD_PATH: &str = "__oxy/build";
+
 /// The synthesised web app manifest — what makes a custom app installable.
 ///
 /// Synthesised by the platform rather than shipped in the bundle because only
@@ -188,6 +196,45 @@ pub fn service_worker_js() -> &'static str {
 pub fn runtime_script_tag() -> &'static str {
     static TAG: OnceLock<String> = OnceLock::new();
     TAG.get_or_init(|| format!("<script>{}</script>", strip_comments(RUNTIME_SRC)))
+}
+
+/// The runtime `<script>` for a document whose update mode is `updates`
+/// (`AppRuntimeConfig::updates`). With `off`, the update agent between the
+/// `@oxy-updates` markers in `runtime.js` is cut: it would never run, and the
+/// script is inlined into every navigation, so shipping it costs every page.
+/// The mode is per build, never per viewer, so the memoized HTML stays valid.
+pub fn runtime_script_tag_for(updates: &str) -> &'static str {
+    static TAG: OnceLock<String> = OnceLock::new();
+    if updates != "off" {
+        return runtime_script_tag();
+    }
+    TAG.get_or_init(|| {
+        format!(
+            "<script>{}</script>",
+            strip_comments(&without_update_agent(RUNTIME_SRC))
+        )
+    })
+}
+
+const UPDATES_BEGIN: &str = "// @oxy-updates:begin";
+const UPDATES_END: &str = "// @oxy-updates:end";
+
+/// `src` without the lines from `UPDATES_BEGIN` to `UPDATES_END`, inclusive.
+fn without_update_agent(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let mut skipping = false;
+    for line in src.lines() {
+        match line.trim() {
+            UPDATES_BEGIN => skipping = true,
+            UPDATES_END => skipping = false,
+            _ if !skipping => {
+                out.push_str(line);
+                out.push('\n');
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 /// `Service-Worker-Allowed` — the response header that widens a worker's scope
@@ -550,6 +597,30 @@ mod client_artifact_tests {
             // Idempotent: a second pass has nothing left to remove.
             assert_eq!(strip_comments(&stripped), stripped, "{name}");
         }
+    }
+
+    /// `off` ships the runtime without its update agent, and nothing left
+    /// behind may reach into the cut: the rest of the file talks to it only
+    /// through the `onRoute` / `onChunk` hooks it declares itself.
+    #[test]
+    fn off_mode_ships_the_runtime_without_the_update_agent() {
+        assert_eq!(RUNTIME_SRC.matches(UPDATES_BEGIN).count(), 1);
+        assert_eq!(RUNTIME_SRC.matches(UPDATES_END).count(), 1);
+        let full = runtime_script_tag_for("observe");
+        let off = runtime_script_tag_for("off");
+        assert_eq!(full, runtime_script_tag());
+        assert!(full.contains("__oxy/build"));
+        assert!(!off.contains("__oxy/build"), "off must not ship the probe");
+        assert!(!off.contains("__oxyUpdate"));
+        assert!(off.contains("__oxy/beacon") && off.contains("var onChunk = null"));
+        let delta = |s: &str| s.matches('{').count() as isize - s.matches('}').count() as isize;
+        assert_eq!(delta(off), delta(full), "the cut must take whole blocks");
+        assert!(
+            off.len() + 4000 < full.len(),
+            "{} vs {}",
+            off.len(),
+            full.len()
+        );
     }
 
     #[test]

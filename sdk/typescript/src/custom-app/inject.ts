@@ -27,6 +27,17 @@ export interface OxyInjectedAppConfig {
    * itself. Absent on a server older than app environments.
    */
   environment?: OxyAppEnvironment;
+  /**
+   * The build that served this page — the `app_builds` id the runtime's update
+   * agent compares with `<base>__oxy/build`. Absent on an older server.
+   */
+  buildId?: string;
+  /**
+   * What the injected runtime does about a new build: `off`, `observe`,
+   * `auto` or `prompt`. Set by the server from the platform default and the
+   * build's `performance.autoUpdate`. Absent on an older server.
+   */
+  updates?: "off" | "observe" | "auto" | "prompt";
 }
 
 /** An app environment: production, staging, or one engineer's dev slot. */

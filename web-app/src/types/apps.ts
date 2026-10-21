@@ -531,6 +531,29 @@ export interface AppAvailability {
   /** The availability objective the burn rate is measured against, e.g. 0.99. */
   objective: number;
   windows: AvailabilityWindow[];
+  /** Recent sessions on the live build vs older builds. Absent from a server
+   *  older than the update agent. */
+  open_builds?: OpenBuilds;
+}
+
+/**
+ * Whether open tabs picked up the last publish: sessions active in the last
+ * `window_minutes`, by the build they were last seen on (from the runtime's
+ * `oxy-app-ready` / `oxy-update` rows). Counts are sessions, not devices, and a
+ * closed tab counts on its last build until it ages out of the window. A tab
+ * left OPEN behind the live build re-reports (`stale`) every 6 h, so it stays
+ * counted — but only while its probe reaches Oxy; one offline or signed out
+ * for longer than the window ages out too.
+ *
+ * `not_measured` (capture off, the query failed, or nothing published to
+ * compare against) is never a flavour of `all_live`.
+ */
+export interface OpenBuilds {
+  status: "not_measured" | "none_seen" | "all_live" | "some_older";
+  live_sessions: number;
+  older_sessions: number;
+  older_builds: number;
+  window_minutes: number;
 }
 
 // ── Fleet health (every published app, one verdict each) ─────────────────────
@@ -573,6 +596,8 @@ export interface AppHealthRow {
    *  `null` means no established rhythm to compare against. */
   baseline: number | null;
   window_minutes: number;
+  /** See {@link OpenBuilds}. Absent from an older server. */
+  open_builds?: OpenBuilds;
 }
 
 interface FleetSummary {

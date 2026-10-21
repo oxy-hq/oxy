@@ -65,6 +65,9 @@ pub struct AvailabilityResponse {
     pub short_window_minutes: Option<u32>,
     pub objective: f64,
     pub windows: Vec<WindowReport>,
+    /// Recent sessions on the live build vs older builds — whether open tabs
+    /// have picked up the last publish. See `custom_apps_open_builds`.
+    pub open_builds: super::custom_apps_open_builds::OpenBuilds,
 }
 
 fn error_response(status: StatusCode, message: &str) -> Response {
@@ -141,6 +144,7 @@ pub async fn get_availability(
         short_window_minutes: None,
         objective: cfg.objective,
         windows: reports,
+        open_builds: open_builds_for(&outcome.app, outcome.environments.production).await,
     };
     match verdict {
         BurnVerdict::NoOpinion => {}
@@ -164,6 +168,19 @@ pub async fn get_availability(
     }
 
     (StatusCode::OK, Json(response)).into_response()
+}
+
+/// One app's open-builds line, compared against `live` — the build production
+/// serves, from the `app_environments` row the gate already read.
+async fn open_builds_for(
+    app: &entity::apps::Model,
+    live: Option<uuid::Uuid>,
+) -> super::custom_apps_open_builds::OpenBuilds {
+    use super::custom_apps_open_builds as open_builds;
+    open_builds::for_apps(&[(app.org_id, app.id, live)])
+        .await
+        .remove(&app.id)
+        .unwrap_or_else(open_builds::OpenBuilds::not_measured)
 }
 
 #[cfg(test)]

@@ -17,6 +17,7 @@ import { defaultChannel, draftTarget } from "./draftTarget";
 import { useAppViewState } from "./useAppViewState";
 import { useDossierWindow } from "./useDossierWindow";
 import { usePersistentState } from "./usePersistentState";
+import { useReloadOnPromotion } from "./useReloadOnPromotion";
 
 /**
  * The stage: a live app preview beside a scrolling "dossier" (status & manifest,
@@ -80,6 +81,9 @@ export const AppDetail = ({ app: listed }: { app: CustomApp }) => {
   const onFnChange = useCallback((name: string | null) => patchView({ fn: name }), [patchView]);
 
   const [nonce, setNonce] = useState(0);
+  const reloadPreview = useCallback(() => setNonce((n) => n + 1), []);
+  // A Make Live or rollback moves the live build; the frame follows it.
+  useReloadOnPromotion(app.last_promoted_at, reloadPreview);
 
   // Wide = docked panel; narrow = overlay Sheet. Two bits of state so the
   // docked panel and the drawer keep independent defaults (panel open by
@@ -173,7 +177,7 @@ export const AppDetail = ({ app: listed }: { app: CustomApp }) => {
         onTabChange={() => undefined}
         onDeviceChange={setDevice}
         onChannelChange={handleChannelChange}
-        onReload={() => setNonce((n) => n + 1)}
+        onReload={reloadPreview}
       />
 
       <div className='min-h-0 flex-1'>

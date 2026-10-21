@@ -97,6 +97,12 @@ pub const PLATFORM_EVENTS: &[&str] = &[
     // sends a negative: a boot failure hard enough to blank the page is not
     // reliably alive enough to report itself.
     "oxy-app-ready",
+    // A long-open tab noticed a new build (`phase: detected`), reloaded onto it
+    // (`applied`), or gave up after a reload landed on the old build twice
+    // (`guarded`). Carries the two build ids, the phase, what triggered it
+    // (`how`) and how long the tab ran stale — no path, so it is health, not
+    // analytics, and rides past `analytics: false`. See `custom_apps_updates`.
+    "oxy-update",
 ];
 
 /// The subset of [`PLATFORM_EVENTS`] that is platform health rather than the
@@ -105,7 +111,7 @@ pub const PLATFORM_EVENTS: &[&str] = &[
 /// Kept here as well as in `runtime.js` on purpose: the client decides what to
 /// send, this decides what is mirrored into the operational event stream, and a
 /// name drifting out of one list should not silently change the other's meaning.
-pub const HEALTH_EVENTS: &[&str] = &["oxy-app-ready", "oxy-error"];
+pub const HEALTH_EVENTS: &[&str] = &["oxy-app-ready", "oxy-error", "oxy-update"];
 
 /// Events accepted per request. Matches the client's own batch cap, so the
 /// normal path never trips it — a request over the cap is a client that has
@@ -302,16 +308,18 @@ pub async fn handle(
             .get("path")
             .and_then(|v| v.as_str())
             .unwrap_or_default();
-        oxy_custom_apps::telemetry::record_client_event(
+        oxy_custom_apps::telemetry::record_client_event(oxy_custom_apps::telemetry::ClientEvent {
             org_id,
             app_id,
             user_id,
-            &session_id.to_string(),
-            name,
+            session_id: &session_id.to_string(),
+            event_name: name,
             path,
             outcome,
-            &environment,
-        );
+            environment: &environment,
+            build_id: client_build(payload),
+            detail: update_detail(name, payload),
+        });
     }
 
     // Queued, not spawned: the drain validates and batch-inserts, and a full
@@ -332,9 +340,67 @@ pub async fn handle(
     StatusCode::NO_CONTENT.into_response()
 }
 
+/// The build the reporting document runs, as the `app_builds.id` UUID — or
+/// empty. The runtime sends `build` (its `window.__OXY_APP__.buildId`) on
+/// `app-ready`, `oxy-error` and `oxy-update`; it is page-supplied, so only a
+/// well-formed UUID is stored, never arbitrary text in an id column.
+fn client_build(payload: &serde_json::Value) -> String {
+    payload
+        .get("build")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .map(|id| id.to_string())
+        .unwrap_or_default()
+}
+
+/// `phase:how` for an `oxy-update` row (`detected:poll`, `applied:route`,
+/// `guarded:idle`), empty for every other event. Both halves come from small
+/// fixed vocabularies in `runtime.js`; anything else is dropped rather than
+/// stored, since the page could send any string.
+fn update_detail(name: &str, payload: &serde_json::Value) -> String {
+    if name != "oxy-update" {
+        return String::new();
+    }
+    const PHASES: &[&str] = &["detected", "stale", "applied", "guarded"];
+    const HOWS: &[&str] = &["poll", "route", "idle", "resume", "chunk", "app"];
+    let field = |key: &str, allowed: &[&str]| {
+        payload
+            .get(key)
+            .and_then(|v| v.as_str())
+            .filter(|v| allowed.contains(v))
+            .unwrap_or("")
+            .to_string()
+    };
+    format!("{}:{}", field("phase", PHASES), field("how", HOWS))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn client_build_keeps_only_a_uuid() {
+        let id = Uuid::new_v4();
+        assert_eq!(
+            client_build(&serde_json::json!({ "build": id.to_string() })),
+            id.to_string()
+        );
+        assert_eq!(client_build(&serde_json::json!({ "build": "build-7" })), "");
+        assert_eq!(client_build(&serde_json::json!({ "build": 7 })), "");
+        assert_eq!(client_build(&serde_json::json!({})), "");
+    }
+
+    #[test]
+    fn update_detail_is_a_fixed_vocabulary() {
+        let p = serde_json::json!({ "phase": "applied", "how": "route" });
+        assert_eq!(update_detail("oxy-update", &p), "applied:route");
+        // A tab still behind re-reports every 6 h (`runtime.js`).
+        let stale = serde_json::json!({ "phase": "stale", "how": "poll" });
+        assert_eq!(update_detail("oxy-update", &stale), "stale:poll");
+        let junk = serde_json::json!({ "phase": "<script>", "how": "idle" });
+        assert_eq!(update_detail("oxy-update", &junk), ":idle");
+        assert_eq!(update_detail("oxy-app-ready", &p), "");
+    }
 
     fn batch(json: &str) -> Result<Vec<(String, serde_json::Value)>, StatusCode> {
         admit(json.as_bytes()).map_err(|r| r.status())

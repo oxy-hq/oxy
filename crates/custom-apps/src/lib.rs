@@ -36,6 +36,8 @@
 //!   the bounded queue they are `try_send`-ed onto and the sink that drains it.
 //! - `gate`: the data-plane gate's decision half (user, workspace row, access
 //!   verdict) and the context it resolves; `oxy-app` keeps the request-facing entry.
+//! - `updates`: how a long-open tab picks up a new build (the platform mode,
+//!   an app's `autoUpdate`, the `/fn` build handshake headers).
 
 // The usage sink's chained connector futures (`usage_airhouse`) exceed the
 // default type-layout query depth of 128, as the same code did in `oxy-app`.
@@ -73,6 +75,7 @@ pub mod sync;
 pub mod telemetry;
 pub mod thread_source;
 pub mod tracking;
+pub mod updates;
 pub mod usage_airhouse;
 pub mod usage_queue;
 pub mod write_record;

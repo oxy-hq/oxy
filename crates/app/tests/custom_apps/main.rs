@@ -129,6 +129,7 @@ mod custom_app_functions_semantic_revision;
 mod custom_app_functions_shape_zoo;
 mod custom_app_functions_shape_zoo_oltp;
 mod custom_app_gate_revocation;
+mod custom_app_live_build;
 mod custom_app_platform_runtime;
 mod custom_app_procedure_run_attempts;
 mod custom_app_procedure_run_fixture;

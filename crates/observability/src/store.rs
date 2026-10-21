@@ -356,6 +356,19 @@ pub trait ObservabilityStore: Send + Sync + std::fmt::Debug {
         Ok(HashMap::new())
     }
 
+    /// Per app (keyed by `app_id`), how many sessions active in the last
+    /// `window_minutes` were last seen on each build — from the platform
+    /// runtime's `oxy-app-ready` / `oxy-update` rows. An app absent from the map
+    /// had no session report a build; `Err` (or capture off) is "not measured",
+    /// and a caller must keep the two apart.
+    async fn get_fleet_build_sessions(
+        &self,
+        _apps: &[(String, String)],
+        _window_minutes: u32,
+    ) -> Result<HashMap<String, Vec<crate::types::AppBuildSessions>>, OxyError> {
+        Ok(HashMap::new())
+    }
+
     /// Request counts for the same window one cycle back, keyed by `app_id` —
     /// the baseline [`crate::heartbeat::evaluate`] compares against.
     async fn get_fleet_heartbeat_baseline(

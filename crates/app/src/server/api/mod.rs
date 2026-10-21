@@ -52,6 +52,8 @@ pub use oxy_custom_apps::telemetry as custom_apps_telemetry;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::tracking as custom_apps_tracking;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
+pub use oxy_custom_apps::updates as custom_apps_updates;
+/// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::usage_airhouse as custom_apps_usage_airhouse;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::usage_queue as custom_apps_usage_queue;

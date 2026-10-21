@@ -218,6 +218,12 @@ pub struct ClientPrefs {
     /// navigation, which no app can opt out of and which is what the Activity
     /// tab's floor has always been.
     pub analytics: bool,
+    /// `performance.autoUpdate` in `oxy-app.json`: `true`, `false` or
+    /// `"prompt"` — how this build's open tabs take a newer build. Absent
+    /// means the platform default (`updates`). `#[serde(default)]`
+    /// so a manifest written before the field existed reads as "platform".
+    #[serde(default)]
+    pub auto_update: crate::updates::AppUpdatePolicy,
 }
 
 impl Default for ClientPrefs {
@@ -225,6 +231,7 @@ impl Default for ClientPrefs {
         Self {
             service_worker: true,
             analytics: true,
+            auto_update: crate::updates::AppUpdatePolicy::Platform,
         }
     }
 }
@@ -251,7 +258,25 @@ impl ClientPrefs {
                 .get("analytics")
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(true),
+            auto_update: auto_update_policy(
+                manifest
+                    .get("performance")
+                    .and_then(|p| p.get("autoUpdate")),
+            ),
         }
+    }
+}
+
+/// `performance.autoUpdate` → the build's update policy. Anything unreadable
+/// is "platform", for the same reason as the other hints: an optional value
+/// must not be able to fail a publish.
+fn auto_update_policy(value: Option<&serde_json::Value>) -> crate::updates::AppUpdatePolicy {
+    use crate::updates::AppUpdatePolicy;
+    match value {
+        Some(serde_json::Value::Bool(true)) => AppUpdatePolicy::Auto,
+        Some(serde_json::Value::Bool(false)) => AppUpdatePolicy::Never,
+        Some(serde_json::Value::String(s)) if s == "prompt" => AppUpdatePolicy::Prompt,
+        _ => AppUpdatePolicy::Platform,
     }
 }
 
@@ -957,6 +982,32 @@ mod tests {
     }
 
     #[test]
+    fn auto_update_reads_true_false_and_prompt() {
+        use crate::updates::AppUpdatePolicy;
+        let read = |v: serde_json::Value| {
+            ClientPrefs::from_manifest_json(Some(&serde_json::json!({
+                "performance": { "autoUpdate": v }
+            })))
+            .auto_update
+        };
+        assert_eq!(read(serde_json::json!(true)), AppUpdatePolicy::Auto);
+        assert_eq!(read(serde_json::json!(false)), AppUpdatePolicy::Never);
+        assert_eq!(read(serde_json::json!("prompt")), AppUpdatePolicy::Prompt);
+        assert_eq!(
+            read(serde_json::json!("sometimes")),
+            AppUpdatePolicy::Platform
+        );
+
+        // A manifest written before the field existed still parses.
+        let old: AssetManifest = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 1, "buildId": "b", "entries": [], "assets": [],
+            "client": { "serviceWorker": true, "analytics": true }
+        }))
+        .expect("old manifest");
+        assert_eq!(old.client.auto_update, AppUpdatePolicy::Platform);
+    }
+
+    #[test]
     fn client_prefs_default_on_and_opt_out_explicitly() {
         assert_eq!(
             ClientPrefs::from_manifest_json(None),
@@ -973,6 +1024,7 @@ mod tests {
         let prefs = ClientPrefs::from_manifest_json(Some(&opted_out));
         assert!(!prefs.service_worker);
         assert!(!prefs.analytics);
+        assert_eq!(prefs.auto_update, crate::updates::AppUpdatePolicy::Platform);
 
         // A manifest that says nothing, or says something unreadable, gets the
         // defaults rather than an error — an optional hint must not be able to

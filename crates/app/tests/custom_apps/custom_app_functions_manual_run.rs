@@ -28,7 +28,8 @@
 //! **Children.** `environment_checks` (a check run in a named app environment)
 //! and `environment_refusals` (every refusal around one);
 //! `environment_schedules` (Run now `as=schedule`); `readback` (`/fn`'s
-//! invocation id, and the fixture the read-backs share), `invocation_listings`,
+//! invocation id, and the fixture the read-backs share), `build_handshake`
+//! (`x-oxy-live-build` and the stale-caller 409), `invocation_listings`,
 //! `invocation_reach`, `sandbox_build_reach`, `agent_draft_build_reach`,
 //! `held_readback`, `run_readback` and `log_reads`;
 //! `publish_token_router` (a real token through real authentication),
@@ -39,6 +40,7 @@
 //! **Needs** Postgres only.
 
 mod agent_draft_build_reach;
+mod build_handshake;
 mod callers;
 mod environment_checks;
 mod environment_refusals;

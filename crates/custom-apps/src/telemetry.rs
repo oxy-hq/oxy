@@ -410,31 +410,52 @@ pub fn record_function_logs(
     custom_app_sink::record_logs(records);
 }
 
+/// One browser-reported platform event, as the beacon hands it over.
+pub struct ClientEvent<'a> {
+    pub org_id: Uuid,
+    pub app_id: Uuid,
+    pub user_id: Uuid,
+    pub session_id: &'a str,
+    pub event_name: &'a str,
+    pub path: &'a str,
+    pub outcome: &'static str,
+    pub environment: &'a str,
+    /// The `app_builds.id` the reporting document runs, or empty.
+    pub build_id: String,
+    /// `phase:how` for `oxy-update`; empty otherwise.
+    pub detail: String,
+}
+
 /// A browser-reported platform event (`oxy-app-ready`, `oxy-error`, …).
 ///
 /// `oxy-app-ready` is the one that resolves the implicit-failure class: a
 /// served shell with no `app-ready` behind it is a white screen, and no status
 /// code anywhere can say so.
-#[allow(clippy::too_many_arguments)]
-pub fn record_client_event(
-    org_id: Uuid,
-    app_id: Uuid,
-    user_id: Uuid,
-    session_id: &str,
-    event_name: &str,
-    path: &str,
-    outcome: &'static str,
-    environment: &str,
-) {
+pub fn record_client_event(event: ClientEvent<'_>) {
     if !custom_app_sink::is_enabled() {
         return;
     }
+    let ClientEvent {
+        org_id,
+        app_id,
+        user_id,
+        session_id,
+        event_name,
+        path,
+        outcome,
+        environment,
+        build_id,
+        detail,
+    } = event;
     let (trace_id, span_id) = trace_ids();
     custom_app_sink::record_event(CustomAppEventRecord {
         timestamp_ms: now_ms(),
         org_id: org_id.to_string(),
         app_id: app_id.to_string(),
-        build_id: String::new(),
+        // The build the reporting DOCUMENT runs (UUID-validated by the beacon),
+        // not the one live when the row lands — which is what lets an operator
+        // count sessions still on an older build.
+        build_id,
         request_id: String::new(),
         session_id: session_id.to_string(),
         user_id: user_id.to_string(),
@@ -448,7 +469,7 @@ pub fn record_client_event(
         app_role: String::new(),
         outcome: outcome.to_string(),
         error_kind: event_name.to_string(),
-        error_detail: String::new(),
+        error_detail: detail,
         trace_id,
         span_id,
         environment: environment.to_string(),

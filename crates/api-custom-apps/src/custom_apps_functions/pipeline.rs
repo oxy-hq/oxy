@@ -92,7 +92,11 @@ pub(super) enum PrepareError {
     QueuedRefused(QueuedRefused),
     NoBuild(AppEnvironment),
     FunctionLookup(String),
-    FunctionNotFound,
+    /// The build the environment serves has no function by that name; `build`
+    /// is that live build, which the route's stale-caller answer names.
+    FunctionNotFound {
+        build: Uuid,
+    },
     BuildLookup(String),
     BuildNotFound,
     Policy(String),
@@ -142,7 +146,7 @@ impl PrepareError {
                     "could not read the function registry; retry shortly",
                 )
             }
-            Self::FunctionNotFound => json_error(
+            Self::FunctionNotFound { .. } => json_error(
                 S::NOT_FOUND,
                 "FunctionNotFound",
                 &format!(
@@ -201,7 +205,9 @@ impl PrepareError {
                 format!("the {environment} environment of this app has no build")
             }
             Self::FunctionLookup(e) => format!("app_functions lookup failed: {e}"),
-            Self::FunctionNotFound => format!("function '{function_name}' not found in build"),
+            Self::FunctionNotFound { .. } => {
+                format!("function '{function_name}' not found in build")
+            }
             Self::BuildLookup(e) => format!("app_builds lookup failed: {e}"),
             Self::BuildNotFound => "build not found".to_string(),
             Self::Policy(e) => format!("environment policy lookup failed: {e}"),
@@ -243,7 +249,7 @@ pub(super) async fn admit(
     let func_row = function_cache::function_row(db, app.id, build_id, function_name)
         .await
         .map_err(|e| PrepareError::FunctionLookup(e.to_string()))?
-        .ok_or(PrepareError::FunctionNotFound)?;
+        .ok_or(PrepareError::FunctionNotFound { build: build_id })?;
     let admission = match at_the_door {
         AtTheDoor::Admitted(admission) => admission,
         // Refused before the invocation row, so a refusal leaves none. What

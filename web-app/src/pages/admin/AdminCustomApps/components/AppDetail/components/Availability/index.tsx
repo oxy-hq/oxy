@@ -2,6 +2,7 @@ import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { useAppAvailability } from "@/hooks/api/customApps/useCustomApps";
 import { AvailabilityVerdict } from "./components/AvailabilityVerdict";
 import { AvailabilityWindows } from "./components/AvailabilityWindows";
+import { OpenBuildsLine } from "./components/OpenBuildsLine";
 
 /**
  * Availability — the *serving* answer, as opposed to the deployment-integrity
@@ -60,6 +61,7 @@ export const Availability = ({ orgSlug, appSlug }: { orgSlug: string; appSlug: s
     <div className='space-y-3 p-4 pt-0' data-testid='admin-app-availability'>
       <AvailabilityVerdict data={data} />
       <AvailabilityWindows windows={data.windows} />
+      <OpenBuildsLine open={data.open_builds} />
     </div>
   );
 };

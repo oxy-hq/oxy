@@ -10,6 +10,8 @@
  *     it throw (`oxy-error`).
  *  3. **Instrument the app by default** — SPA pageviews, Core Web Vitals and
  *     engagement time, posted to `__oxy/beacon`.
+ *  4. **Notice a new build** in a tab left open for hours or days, and — in
+ *     `auto` mode only — reload onto it at a safe moment. See § *updates*.
  *
  * ## Two categories, one flag
  *
@@ -190,7 +192,9 @@
   function markReady(how) {
     if (readySent) return;
     readySent = true;
-    push("oxy-app-ready", { how: how });
+    // `build` is the build this document runs, so the operator view can count
+    // sessions still on an older one. An id, not a path: still health.
+    push("oxy-app-ready", { how: how, build: app.buildId || "" });
     // Sent immediately rather than on the 15s timer: a boot failure that takes
     // the tab with it must not also take the proof that boot succeeded.
     flush(false);
@@ -257,6 +261,10 @@
     if (analyticsEnabled) push("oxy-pageview", { path: next, kind: "spa" });
   }
 
+  // Hooks the update section (below) installs when it is shipped and on.
+  var onRoute = function () {};
+  var onChunk = null;
+
   // History is patched rather than polled: a router calls `pushState`
   // synchronously and there is no event for it, so the alternatives are a
   // patch or a timer that is always either late or wasteful.
@@ -267,11 +275,18 @@
       var result = original.apply(this, arguments);
       try {
         onRouteChange();
+        // Only a PUSH is a safe moment to reload onto a new build: a router
+        // rewrites the URL with `replaceState` mid-render (query sync, redirects),
+        // and reloading under that would interrupt the screen being drawn.
+        onRoute(method === "pushState");
       } catch (e) {}
       return result;
     };
   });
   window.addEventListener("popstate", onRouteChange);
+  window.addEventListener("popstate", function () {
+    onRoute(true);
+  });
   window.addEventListener("hashchange", onRouteChange);
 
   // ── engagement ────────────────────────────────────────────────────────────
@@ -462,13 +477,18 @@
     // A rejection can carry anything — an Error, a string, a response object.
     // Only an Error has `name`/`stack`; for the rest the type is the most
     // honest name available, and `String(r)` is the only message there is.
-    noteError(
-      r && r.name ? r.name : typeof r,
-      r && r.message ? r.message : safeString(r),
-      r && r.stack,
-      "unhandledrejection",
-      r && r.traceId
-    );
+    var note = function () {
+      noteError(
+        r && r.name ? r.name : typeof r,
+        r && r.message ? r.message : safeString(r),
+        r && r.stack,
+        "unhandledrejection",
+        r && r.traceId
+      );
+    };
+    // A lazy chunk that failed to load is usually version skew, not a bug —
+    // see `recoverChunk`. It is reported as before unless that recovers it.
+    if (!(onChunk && onChunk(r, note))) note();
   });
 
   /** `String(x)` throws on a proxy with a hostile `toString`, and an analytics
@@ -508,6 +528,408 @@
     // long as the page stays open, which is the behaviour the cap exists to
     // prevent.
   }
+
+  // @oxy-updates:begin
+  // ── updates ───────────────────────────────────────────────────────────────
+  //
+  // Everything between the two `@oxy-updates` marker lines is cut from the
+  // inlined script when the mode is `off` (`oxy-api-custom-apps` `client.rs`), so the
+  // rest of this file must reach it only through `onRoute` / `onChunk`.
+  //
+  // A custom app is a single-page app: a tab runs the build it loaded until the
+  // document reloads. An iPad left on a checklist, a kiosk or an installed PWA
+  // can therefore run an old build for days, and its lazy chunks 404 once a
+  // publish replaces them. This section closes that gap without the app doing
+  // anything. Modes come from the server (`app.updates`, see
+  // `custom_apps_updates.rs`):
+  //
+  //   off      nothing below runs (and it is not even shipped).
+  //   observe  DETECT + ANNOUNCE + stale-chunk recovery; never reloads otherwise.
+  //   auto     observe, plus APPLY at a safe moment.
+  //   prompt   observe, with the SDK offering an "Update ready" control; turns
+  //            into auto 24 h after detection so an unattended kiosk converges.
+  //
+  // DETECT: poll `__oxy/build` every ~5 min while visible, and on resume,
+  // bfcache restore and `online`. Only a 200 whose body names a UUID counts; a
+  // 404, a network error or junk is "unknown". A redirect is an expired session
+  // and is announced as `oxy:session-expired`, never read as a new build. A tab
+  // still behind re-reports (`stale`) every 6 h, so the operator's 24 h
+  // open-builds window keeps counting it.
+  //
+  // ANNOUNCE: a cancelable `oxy:update-available` {from, to}, once per target.
+  // Cancelling it means the app takes over (`__oxyUpdate.apply()` when ready).
+  // `oxy:update-status` fires whenever `status()` changes.
+  //
+  // APPLY (auto): no sooner than 60 s after detection — the per-pod resolution
+  // cache TTL, so every pod serves the new build by then — and only at a safe
+  // moment: a path-changing push/pop navigation, 2 min without input and no
+  // editable element focused, or coming back after 10+ min hidden. Never while
+  // the app holds a `defer()` token, never offline.
+  //
+  // STALE CHUNK (observe and auto): see `recoverChunk`.
+  //
+  // LOOP GUARD, per app (apps on one origin share sessionStorage): a reload
+  // records its target first. If the reloaded document is still the old build
+  // (a stale pod, or the worker's cached-shell fallback), wait 90 s and try once
+  // more, then stop and report `guarded`. Independently, a tab gets at most two
+  // automatic reloads per 5 min whatever the target — two pods disagreeing
+  // mid-publish cannot bounce it between builds. No storage, no reload.
+  //
+  // Deliberately NOT here: `skipWaiting` (it swaps the worker under every other
+  // open tab — see sw.js), a `window.fetch` wrapper, or any push channel.
+  var mode = /^(off|auto|prompt)$/.test(app.updates) ? app.updates : "observe";
+  var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  var CHUNK_RE =
+    /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Unable to preload CSS/i;
+  var MIN = 60000;
+  var current = String(app.buildId || "").toLowerCase();
+  var GUARD_KEY = "oxy-update:" + (app.appId || base);
+  var loadedAt = Date.now();
+  var seen = {};
+  var pending = null;
+  var expired = false;
+  var holds = {};
+  var holdSeq = 0;
+  var lastInput = loadedAt;
+  var hiddenAt = 0;
+  var probing = null;
+  var reloading = false;
+  var asked = null;
+  var stayed = {};
+  var capReported = false;
+  var notBefore = 0;
+  var updPath = location.pathname;
+
+  function readGuard() {
+    try {
+      var g = JSON.parse(sessionStorage.getItem(GUARD_KEY) || "null");
+      return g && typeof g === "object" ? g : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  function writeGuard(value) {
+    try {
+      sessionStorage.setItem(GUARD_KEY, JSON.stringify(value));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function report(phase, how, from, to, staleMs) {
+    push("oxy-update", {
+      phase: phase,
+      how: how,
+      from: from,
+      to: to,
+      stale_ms: Math.max(0, Math.round(staleMs || 0)),
+      build: current
+    });
+  }
+
+  function setStatus(p, e) {
+    if (p === pending && e === expired) return;
+    pending = p;
+    expired = e;
+    window.dispatchEvent(new CustomEvent("oxy:update-status"));
+  }
+
+  function probe(how) {
+    if (probing) return probing;
+    probing = fetch(base + "__oxy/build", {
+      cache: "no-store",
+      credentials: "same-origin",
+      redirect: "manual"
+    })
+      .then(function (r) {
+        if (r.type === "opaqueredirect") {
+          if (!expired) {
+            setStatus(pending, true);
+            window.dispatchEvent(new CustomEvent("oxy:session-expired"));
+          }
+          return null;
+        }
+        return r.status === 200 ? r.json() : null;
+      })
+      .then(function (body) {
+        var id = body && typeof body.buildId === "string" ? body.buildId.toLowerCase() : "";
+        if (!UUID_RE.test(id)) return null;
+        found(id, how);
+        return id;
+      })
+      .catch(function () {
+        return null;
+      })
+      .then(function (id) {
+        probing = null;
+        return id;
+      });
+    return probing;
+  }
+
+  function found(id, how) {
+    var now = Date.now();
+    // Rolled back to the build we run: nothing is pending any more.
+    if (id === current) return setStatus(null, false);
+    var t = seen[id];
+    setStatus(t || (seen[id] = { to: id, at: now, beat: now }), false);
+    if (t) {
+      if (now - t.beat >= 6 * 60 * MIN) {
+        t.beat = now;
+        report("stale", how, current, id, now - t.at);
+      }
+      return;
+    }
+    report("detected", how, current, id, 0);
+    var ev = new CustomEvent("oxy:update-available", {
+      cancelable: true,
+      detail: { from: current, to: id }
+    });
+    if (!window.dispatchEvent(ev)) pending.cancelled = true;
+  }
+
+  function held() {
+    var now = Date.now();
+    for (var k in holds) if (now - holds[k] < 12 * 60 * MIN) return true;
+    return false;
+  }
+
+  function reloadTo(to, how) {
+    if (reloading) return true;
+    var g = readGuard() || {};
+    var now = Date.now();
+    var log = (g.log || []).filter(function (t) {
+      return now - t < 5 * MIN;
+    });
+    var again = g.to === to;
+    if (again && g.n - (stayed[to] || 0) >= 2) return false;
+    if (log.length >= 2) {
+      if (!capReported) report("guarded", how, current, to, now - log[0]);
+      capReported = true;
+      return false;
+    }
+    log.push(now);
+    var at = again ? g.at : (seen[to] && seen[to].at) || now;
+    var n = again ? g.n + 1 : 1;
+    if (!writeGuard({ to: to, from: current, how: how, n: n, at: at, log: log })) return false;
+    reloading = true;
+    // Added after the app's own listeners, so it sees whether the app asked
+    // "leave this page?" (see `refused`).
+    window.addEventListener(
+      "beforeunload",
+      function (e) {
+        var rv = e.returnValue;
+        if (e.defaultPrevented || (typeof rv === "string" && rv)) asked = to;
+      },
+      { once: true }
+    );
+    location.reload();
+    return true;
+  }
+
+  // A viewer who chose to stay at the app's "leave this page?" prompt left this
+  // page running with `reloading` set, so `apply()` and the Update ready pill
+  // did nothing for the rest of its life. Their next input on the page is the
+  // sign they stayed. It counts as the app cancelling `oxy:update-available`:
+  // nothing reloads onto that build by itself again, but `apply()` still does.
+  //
+  // The same input can also come from a viewer who picked Leave and tapped the
+  // old page before the reload committed, so the loop guard is left as written:
+  // the new page still finds its target (and reports `applied`), and the try
+  // still spends the 5 min budget. Only this page, in memory, excuses it from
+  // the per-target count (`stayed`), so two refusals do not end `apply()` for
+  // that build. A page that really reloads starts with none excused.
+  function refused() {
+    if (!asked) return;
+    stayed[asked] = (stayed[asked] || 0) + 1;
+    if (seen[asked]) seen[asked].cancelled = true;
+    asked = null;
+    reloading = false;
+  }
+
+  function maybeApply(how) {
+    if (!pending || pending.cancelled || held() || navigator.onLine === false) return false;
+    var age = Date.now() - pending.at;
+    var auto = mode === "auto" || (mode === "prompt" && age >= 24 * 60 * MIN);
+    if (!auto || age < MIN || Date.now() < notBefore) return false;
+    return reloadTo(pending.to, how);
+  }
+
+  function editing() {
+    var el = document.activeElement;
+    var tag = el && el.tagName;
+    return (
+      tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || !!(el && el.isContentEditable)
+    );
+  }
+
+  // A lazy chunk the page never fetched is gone once a publish replaces it, and
+  // the screen that needed it is broken — but the rest of the page may still
+  // hold unsaved work in memory, which a reload discards. So the reload waits
+  // until 60 s after load (before that, pods may still disagree about the live
+  // build, and a reload could put a fresh page on the OLD one), and is skipped
+  // while the app holds a defer token, an editable element is focused, the app
+  // cancelled `oxy:update-available` for that build, or it cancels the
+  // `oxy:chunk-stale` {from, to} dispatched just before. Skipped means the
+  // error is reported as before.
+  //
+  // The report waits on that decision, up to the floor. A page hidden or
+  // unloaded first (a viewer reloading or closing the broken screen) reports
+  // at once (`settleChunks`), because `finalize` sends only what was noted.
+  // Hidden is settled too, not only `pagehide`: on mobile it is the last
+  // signal a closed tab reliably gives. The cost is that a tab hidden and
+  // shown again inside the floor has already reported the error, and the
+  // decision may still reload it. The error is then counted although the
+  // reload recovered it. That over-count is accepted, because the
+  // alternative is losing the error.
+  var undecided = [];
+  function settleChunks() {
+    var due = undecided;
+    undecided = [];
+    for (var i = 0; i < due.length; i++) due[i]();
+  }
+  function chunkReload(to) {
+    if (held() || editing() || (seen[to] && seen[to].cancelled)) return false;
+    var ev = new CustomEvent("oxy:chunk-stale", {
+      cancelable: true,
+      detail: { from: current, to: to }
+    });
+    return window.dispatchEvent(ev) && reloadTo(to, "chunk");
+  }
+  function recoverChunk(fallback) {
+    var reported = false;
+    var noteOnce = function () {
+      if (!reported) fallback();
+      reported = true;
+    };
+    undecided.push(noteOnce);
+    setTimeout(function () {
+      probe("chunk").then(function (id) {
+        undecided = undecided.filter(function (f) {
+          return f !== noteOnce;
+        });
+        if (!(id && id !== current && chunkReload(id))) noteOnce();
+      });
+    }, Math.max(0, loadedAt + MIN - Date.now()));
+  }
+
+  if (mode !== "off" && UUID_RE.test(current) && typeof fetch === "function") {
+    var guard = readGuard();
+    if (guard && guard.to === current) {
+      report("applied", guard.how, guard.from, guard.to, Date.now() - guard.at);
+      // The per-target count is done; the 5 min budget (`log`) is not.
+      writeGuard({ log: guard.log });
+    } else if (guard && guard.to && guard.n >= 2) {
+      if (!guard.reported) report("guarded", guard.how, current, guard.to, Date.now() - guard.at);
+      guard.reported = 1;
+      writeGuard(guard);
+    } else if (guard && guard.to) {
+      // The reload landed on the old build. Ask again now, and allow the one
+      // retry no sooner than 90 s from here.
+      notBefore = Date.now() + 90000;
+      probe("poll");
+    }
+
+    onRoute = function (mayApply) {
+      var changed = location.pathname !== updPath;
+      updPath = location.pathname;
+      if (changed && mayApply) maybeApply("route");
+    };
+    onChunk = function (r, fallback) {
+      var hit = !!r && (r.name === "ChunkLoadError" || CHUNK_RE.test(safeString(r.message)));
+      if (hit) recoverChunk(fallback);
+      return hit;
+    };
+
+    window.__oxyUpdate = {
+      defer: function () {
+        var id = ++holdSeq;
+        holds[id] = Date.now();
+        return function () {
+          delete holds[id];
+        };
+      },
+      apply: function () {
+        return !!pending && reloadTo(pending.to, "app");
+      },
+      check: function () {
+        return probe("app");
+      },
+      status: function () {
+        return {
+          mode: mode,
+          current: current,
+          available: pending ? pending.to : null,
+          sessionExpired: expired
+        };
+      }
+    };
+
+    var schedulePoll = function () {
+      setTimeout(function () {
+        if (document.visibilityState !== "hidden") probe("poll");
+        schedulePoll();
+      }, 5 * MIN * (0.8 + Math.random() * 0.4));
+    };
+    schedulePoll();
+
+    var resume = function () {
+      var away = hiddenAt ? Date.now() - hiddenAt : 0;
+      hiddenAt = 0;
+      // Coming back is activity: the idle clock restarts, so a short lock is
+      // never read as two idle minutes the moment the screen wakes.
+      lastInput = Date.now();
+      probe("resume").then(function () {
+        if (away >= 10 * MIN) maybeApply("resume");
+      });
+    };
+    // Both registered before `finalize`'s own listeners below, so a settled
+    // chunk error is noted before the errors are sent.
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState !== "hidden") return resume();
+      hiddenAt = hiddenAt || Date.now();
+      settleChunks();
+    });
+    window.addEventListener("pagehide", settleChunks);
+    window.addEventListener("pageshow", function (e) {
+      if (e.persisted) resume();
+    });
+    window.addEventListener("online", function () {
+      probe("poll");
+    });
+    window.addEventListener("vite:preloadError", function (e) {
+      // `preventDefault` must be synchronous, so it is used only when the new
+      // build is already known and the 60 s floor has passed. Otherwise Vite's
+      // error proceeds as it would have and the probe decides; an app that
+      // catches the rejection itself (an error boundary) still gets the reload.
+      if (!pending || Date.now() - loadedAt < MIN) recoverChunk(function () {});
+      else if (chunkReload(pending.to)) e.preventDefault();
+    });
+
+    // Every mode: `apply()` and chunk recovery reload in observe too.
+    ["pointerdown", "keydown", "touchstart"].forEach(function (type) {
+      window.addEventListener(
+        type,
+        function () {
+          lastInput = Date.now();
+          refused();
+        },
+        { capture: true, passive: true }
+      );
+    });
+    if (mode === "auto" || mode === "prompt") {
+      // Idle means a VISIBLE page nobody is touching. A hidden tab is left to
+      // the resume path, which knows how long it was away.
+      setInterval(function () {
+        var idle = Date.now() - lastInput >= 2 * MIN;
+        if (pending && idle && document.visibilityState !== "hidden" && !editing()) {
+          maybeApply("idle");
+        }
+      }, 15000);
+    }
+  }
+  // @oxy-updates:end
 
   // ── lifecycle ─────────────────────────────────────────────────────────────
   // `visibilitychange → hidden` is the only reliable end-of-session signal on

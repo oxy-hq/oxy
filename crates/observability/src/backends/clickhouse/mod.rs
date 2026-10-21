@@ -3,6 +3,7 @@
 //! Uses the `clickhouse` crate's HTTP API to execute SQL against the
 //! `observability_*` tables.
 
+mod build_sessions;
 mod custom_apps;
 mod execution_analytics;
 mod intents;
@@ -1030,6 +1031,18 @@ impl ObservabilityStore for ClickHouseObservabilityStorage {
         with_query_timeout(
             "get_fleet_availability",
             custom_apps::get_fleet_availability(self, apps, windows_minutes),
+        )
+        .await
+    }
+
+    async fn get_fleet_build_sessions(
+        &self,
+        apps: &[(String, String)],
+        window_minutes: u32,
+    ) -> Result<HashMap<String, Vec<crate::types::AppBuildSessions>>, OxyError> {
+        with_query_timeout(
+            "get_fleet_build_sessions",
+            build_sessions::get_fleet_build_sessions(self, apps, window_minutes),
         )
         .await
     }
