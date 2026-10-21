@@ -11,10 +11,17 @@
  * Output names use the Rust target triples rather than Bun's own
  * (`bun-darwin-arm64`), so `install_oxyc.sh` can reuse `install_oxy.sh`'s
  * uname-to-triple mapping verbatim and the two installers stay comparable.
+ *
+ * The input is tsdown's `dist/main.mjs` (`build:binary` runs `pnpm run build`
+ * first), not `src/main.ts`. tsdown inlines the SDK subpaths `oxyc` bundles
+ * from source (`@oxy-hq/sdk/manifest`, `@oxy-hq/sdk/testing`; see the `alias`
+ * block in tsdown.config.ts), whereas Bun's own resolver only knows the
+ * `tsconfig.json` `paths` map, and widening that map drags the SDK's browser
+ * code into the CLI's type-check. Compiling the bundle keeps one resolution.
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -53,6 +60,15 @@ try {
   process.exit(1);
 }
 
+const bundle = join(pkgRoot, "dist", "main.mjs");
+if (!existsSync(bundle)) {
+  console.error(
+    `${bundle} is missing: run \`pnpm --filter @oxy-hq/cli run build\` first ` +
+      "(`build:binary` does), so the SDK subpaths are already inlined."
+  );
+  process.exit(1);
+}
+
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 
@@ -69,7 +85,7 @@ for (const triple of selected) {
       // `curl | bash`, and the bundle is the part we control.
       "--minify",
       "--sourcemap=none",
-      join(pkgRoot, "src", "main.ts"),
+      bundle,
       "--outfile",
       outfile
     ],
