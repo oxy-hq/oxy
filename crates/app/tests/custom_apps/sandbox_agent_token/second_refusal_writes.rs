@@ -211,7 +211,8 @@ fn request(
 }
 
 /// What the writes above would change: the app's row, its builds, the fixed
-/// environments, and how many apps, publishers and publish tokens there are.
+/// environments, and how many apps, publishers, publish tokens and
+/// notification sends there are.
 async fn fixed_state(agent: &Agent) -> Value {
     let db = &agent.t.db;
     let app = app_model(db, agent.app.id).await;
@@ -240,6 +241,10 @@ async fn fixed_state(agent: &Agent) -> Value {
         .count(db)
         .await
         .expect("publishers");
+    let notification_sends = entity::notification_sends::Entity::find()
+        .count(db)
+        .await
+        .expect("notification sends");
     let publish_tokens = entity::app_publish_tokens::Entity::find()
         .count(db)
         .await
@@ -250,6 +255,7 @@ async fn fixed_state(agent: &Agent) -> Value {
         "published_at": app.published_at.map(|at| at.to_rfc3339()),
         "builds": builds, "environments": environments, "apps": apps,
         "publishers": publishers, "publish_tokens": publish_tokens,
+        "notification_sends": notification_sends,
     })
 }
 
