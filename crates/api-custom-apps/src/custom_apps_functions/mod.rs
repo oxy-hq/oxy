@@ -395,6 +395,12 @@ struct WebhookSpec {
     /// the raw body, so encoding is the only axis that varies here.
     #[serde(default)]
     encoding: Option<String>,
+    /// A fixed prefix the provider puts before the digest, stripped before
+    /// decoding: GitHub sends `sha256=<hex>`, Shopify and Toast send a bare
+    /// digest. Declared rather than sniffed, so a header whose prefix is
+    /// missing or different is a mismatch, not a lucky parse.
+    #[serde(rename = "signaturePrefix", default)]
+    signature_prefix: Option<String>,
 }
 
 /// `"airhouse": { "enabled": true }` — a gate, like [`OltpSpec`]; it never names
@@ -554,16 +560,29 @@ pub(crate) fn function_task_policy(
 /// apart "wrong signature" from "no such endpoint" is a small thing, but the
 /// route is unauthenticated, so it is the only thing separating a probe from a
 /// map of every function an app has.
-pub(crate) fn function_webhook_contract(
-    manifest: &serde_json::Value,
-) -> Option<(String, String, String)> {
+pub(crate) fn function_webhook_contract(manifest: &serde_json::Value) -> Option<WebhookContract> {
     let entry: FunctionManifestEntry = serde_json::from_value(manifest.clone()).ok()?;
     let w = entry.webhook?;
-    Some((
-        w.secret_var?,
-        w.signature_header?,
-        w.encoding.unwrap_or_else(|| "hex".to_string()),
-    ))
+    Some(WebhookContract {
+        secret_var: w.secret_var?,
+        signature_header: w.signature_header?,
+        encoding: w.encoding.unwrap_or_else(|| "hex".to_string()),
+        signature_prefix: w.signature_prefix.filter(|p| !p.is_empty()),
+    })
+}
+
+/// A function's declared webhook contract, resolved: every field the route
+/// needs to verify a delivery, defaults applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WebhookContract {
+    /// The app secret holding the signing key(s), comma-separated for rotation.
+    pub(crate) secret_var: String,
+    /// The header carrying the signature.
+    pub(crate) signature_header: String,
+    /// `hex` or `base64`.
+    pub(crate) encoding: String,
+    /// A provider prefix before the digest (`sha256=`), or none.
+    pub(crate) signature_prefix: Option<String>,
 }
 
 pub(crate) use oxy_custom_apps::function_trigger::FunctionJobTrigger;
@@ -3074,7 +3093,7 @@ mod org_capability_tests {
 
 #[cfg(test)]
 mod webhook_contract_tests {
-    use super::function_webhook_contract;
+    use super::{WebhookContract, function_webhook_contract};
 
     fn manifest(webhook: serde_json::Value) -> serde_json::Value {
         serde_json::json!({ "route": true, "webhook": webhook })
@@ -3089,11 +3108,41 @@ mod webhook_contract_tests {
         }));
         assert_eq!(
             function_webhook_contract(&m),
-            Some((
-                "UBER_SIGNING_KEYS".to_string(),
-                "x-uber-signature".to_string(),
-                "base64".to_string()
-            ))
+            Some(WebhookContract {
+                secret_var: "UBER_SIGNING_KEYS".to_string(),
+                signature_header: "x-uber-signature".to_string(),
+                encoding: "base64".to_string(),
+                signature_prefix: None,
+            })
+        );
+    }
+
+    /// GitHub's `sha256=<hex>`: the prefix is part of the contract, so the
+    /// route strips exactly that and nothing it was not told about. An empty
+    /// string means none, so a manifest cannot declare a no-op prefix that
+    /// reads as "declared" in a listing.
+    #[test]
+    fn reads_a_signature_prefix() {
+        let m = manifest(serde_json::json!({
+            "secretVar": "GITHUB_WEBHOOK_SECRET",
+            "signatureHeader": "x-hub-signature-256",
+            "signaturePrefix": "sha256=",
+        }));
+        assert_eq!(
+            function_webhook_contract(&m)
+                .unwrap()
+                .signature_prefix
+                .as_deref(),
+            Some("sha256=")
+        );
+        let m = manifest(serde_json::json!({
+            "secretVar": "K",
+            "signatureHeader": "x-sig",
+            "signaturePrefix": "",
+        }));
+        assert_eq!(
+            function_webhook_contract(&m).unwrap().signature_prefix,
+            None
         );
     }
 
@@ -3105,7 +3154,7 @@ mod webhook_contract_tests {
             "secretVar": "K",
             "signatureHeader": "x-sig",
         }));
-        assert_eq!(function_webhook_contract(&m).unwrap().2, "hex");
+        assert_eq!(function_webhook_contract(&m).unwrap().encoding, "hex");
     }
 
     /// No `webhook:` block is the 404 case — the function exists and is

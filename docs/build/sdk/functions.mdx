@@ -235,7 +235,9 @@ secret named in `secretVar`, compared in constant time against
 unverified request. `secretVar` may hold several comma-separated keys, so a
 provider's key rotation doesn't drop events. A verified request is answered
 `202` immediately and the function runs in the background with no invoking
-user. Without a `webhook` block the endpoint answers `404`.
+user. Without a `webhook` block the endpoint answers `404`. A provider that
+puts a fixed prefix before the digest — GitHub's `sha256=<hex>` — declares it
+as `"signaturePrefix": "sha256="`, and the platform requires and strips it.
 
 ## Calling a route function from React
 

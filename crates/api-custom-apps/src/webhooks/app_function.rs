@@ -40,7 +40,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 
-use crate::custom_apps_functions::function_webhook_contract;
+use crate::custom_apps_functions::{WebhookContract, function_webhook_contract};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 type HmacSha256 = Hmac<Sha256>;
@@ -75,13 +75,19 @@ pub async fn app_function_webhook(
             )
         })?;
 
-    let (app, (secret_var, signature_header, encoding)) =
-        resolve_webhook_target(&db, &org_slug, &app_slug, &function_name).await?;
+    let (app, contract) = resolve_webhook_target(&db, &org_slug, &app_slug, &function_name).await?;
 
     // Past this point the endpoint is admitted to exist, so failures are 401 —
     // the caller has proven nothing yet.
-    let keys = resolve_signing_keys(&app, &secret_var).await?;
-    verify_signature(&headers, &body, &signature_header, &encoding, &keys)?;
+    let keys = resolve_signing_keys(&app, &contract.secret_var).await?;
+    verify_signature(
+        &headers,
+        &body,
+        &contract.signature_header,
+        &contract.encoding,
+        contract.signature_prefix.as_deref(),
+        &keys,
+    )?;
 
     enqueue(&db, &app, &function_name, &body).await
 }
@@ -165,7 +171,7 @@ async fn resolve_webhook_target(
     org_slug: &str,
     app_slug: &str,
     function_name: &str,
-) -> Result<(entity::apps::Model, (String, String, String)), (StatusCode, String)> {
+) -> Result<(entity::apps::Model, WebhookContract), (StatusCode, String)> {
     let not_found = no_such_webhook;
 
     let app = resolve_app(db, org_slug, app_slug)
@@ -187,11 +193,18 @@ async fn resolve_webhook_target(
 ///
 /// The comparison is `Mac::verify_slice`, which is constant-time. A byte-wise
 /// `==` on a signature leaks its prefix through timing.
+///
+/// `signature_prefix` is the provider's fixed lead-in before the digest
+/// (GitHub's `sha256=`). When the manifest declares one, the header must
+/// carry it and it is stripped before decoding; a header without it is a
+/// 401, not a guess at where the digest starts. When none is declared the
+/// whole value is the digest, as before.
 pub(super) fn verify_signature(
     headers: &HeaderMap,
     body: &[u8],
     signature_header: &str,
     encoding: &str,
+    signature_prefix: Option<&str>,
     keys: &str,
 ) -> Result<(), (StatusCode, String)> {
     let provided = headers
@@ -202,6 +215,13 @@ pub(super) fn verify_signature(
             StatusCode::UNAUTHORIZED,
             format!("missing `{signature_header}` header"),
         ))?;
+    let provided = match signature_prefix {
+        Some(prefix) => provided.strip_prefix(prefix).ok_or((
+            StatusCode::UNAUTHORIZED,
+            format!("signature does not start with `{prefix}`"),
+        ))?,
+        None => provided,
+    };
 
     let provided_bytes = match encoding {
         // Uber sends LOWERCASE hex; accept either case rather than reject a
@@ -338,7 +358,7 @@ mod tests {
     fn accepts_a_correct_hex_signature() {
         let body = br#"{"event":"eats.report.success"}"#;
         let h = headers(&signed_hex("k1", body));
-        assert!(verify_signature(&h, body, HEADER, "hex", "k1").is_ok());
+        assert!(verify_signature(&h, body, HEADER, "hex", None, "k1").is_ok());
     }
 
     /// The rotation case this whole comma-separated shape exists for: a provider
@@ -350,7 +370,7 @@ mod tests {
         for key in ["old-key", "new-key"] {
             let h = headers(&signed_hex(key, body));
             assert!(
-                verify_signature(&h, body, HEADER, "hex", "old-key, new-key").is_ok(),
+                verify_signature(&h, body, HEADER, "hex", None, "old-key, new-key").is_ok(),
                 "rotation pair rejected a signature made with {key}"
             );
         }
@@ -361,7 +381,14 @@ mod tests {
         let body = b"payload";
         let h = headers(&signed_hex("retired-key", body));
         assert_eq!(
-            status(verify_signature(&h, body, HEADER, "hex", "old-key,new-key")),
+            status(verify_signature(
+                &h,
+                body,
+                HEADER,
+                "hex",
+                None,
+                "old-key,new-key"
+            )),
             StatusCode::UNAUTHORIZED
         );
     }
@@ -375,7 +402,7 @@ mod tests {
         let h = headers(&signed_hex("k1", signed));
         let tampered = b"{\"amount\":9}";
         assert_eq!(
-            status(verify_signature(&h, tampered, HEADER, "hex", "k1")),
+            status(verify_signature(&h, tampered, HEADER, "hex", None, "k1")),
             StatusCode::UNAUTHORIZED
         );
     }
@@ -389,23 +416,45 @@ mod tests {
         let full = signed_hex("k1", body);
         let h = headers(&full[..8]);
         assert_eq!(
-            status(verify_signature(&h, body, HEADER, "hex", "k1")),
+            status(verify_signature(&h, body, HEADER, "hex", None, "k1")),
             StatusCode::UNAUTHORIZED
         );
+    }
+
+    /// GitHub's `x-hub-signature-256: sha256=<hex>`. The prefix is declared,
+    /// so it is stripped — and only it: a declared prefix the header lacks is
+    /// a 401 of its own, and an undeclared one is still "not hex", which is
+    /// what a GitHub delivery got before the manifest could say so.
+    #[test]
+    fn strips_a_declared_signature_prefix() {
+        let body = b"{\"action\":\"opened\"}";
+        let h = headers(&format!("sha256={}", signed_hex("k1", body)));
+        assert!(verify_signature(&h, body, HEADER, "hex", Some("sha256="), "k1").is_ok());
+
+        let bare = headers(&signed_hex("k1", body));
+        let err = verify_signature(&bare, body, HEADER, "hex", Some("sha256="), "k1")
+            .expect_err("a declared prefix the header lacks must not verify");
+        assert_eq!(err.0, StatusCode::UNAUTHORIZED);
+        assert_eq!(err.1, "signature does not start with `sha256=`");
+
+        let err = verify_signature(&h, body, HEADER, "hex", None, "k1")
+            .expect_err("a prefixed digest with no declared prefix is not hex");
+        assert_eq!(err.0, StatusCode::UNAUTHORIZED);
+        assert_eq!(err.1, "signature is not hex");
     }
 
     #[test]
     fn accepts_uppercase_hex() {
         let body = b"payload";
         let h = headers(&signed_hex("k1", body).to_ascii_uppercase());
-        assert!(verify_signature(&h, body, HEADER, "hex", "k1").is_ok());
+        assert!(verify_signature(&h, body, HEADER, "hex", None, "k1").is_ok());
     }
 
     #[test]
     fn accepts_base64_when_the_manifest_says_so() {
         let body = b"payload";
         let h = headers(&BASE64.encode(digest("k1", body)));
-        assert!(verify_signature(&h, body, HEADER, "base64", "k1").is_ok());
+        assert!(verify_signature(&h, body, HEADER, "base64", None, "k1").is_ok());
     }
 
     /// Encoding is not sniffed: a base64 digest presented to a `hex` contract is
@@ -415,7 +464,7 @@ mod tests {
         let body = b"payload";
         let h = headers(&BASE64.encode(digest("k1", body)));
         assert_eq!(
-            status(verify_signature(&h, body, HEADER, "hex", "k1")),
+            status(verify_signature(&h, body, HEADER, "hex", None, "k1")),
             StatusCode::UNAUTHORIZED
         );
     }
@@ -428,6 +477,7 @@ mod tests {
                 b"payload",
                 HEADER,
                 "hex",
+                None,
                 "k1"
             )),
             StatusCode::UNAUTHORIZED
@@ -438,7 +488,7 @@ mod tests {
     fn rejects_an_undecodable_signature() {
         let h = headers("not-a-digest");
         assert_eq!(
-            status(verify_signature(&h, b"payload", HEADER, "hex", "k1")),
+            status(verify_signature(&h, b"payload", HEADER, "hex", None, "k1")),
             StatusCode::UNAUTHORIZED
         );
     }
@@ -448,7 +498,7 @@ mod tests {
     fn tolerates_surrounding_whitespace() {
         let body = b"payload";
         let h = headers(&format!("  {}  ", signed_hex("k1", body)));
-        assert!(verify_signature(&h, body, HEADER, "hex", "k1").is_ok());
+        assert!(verify_signature(&h, body, HEADER, "hex", None, "k1").is_ok());
     }
 
     /// A secret of only separators leaves nothing to verify against, so it must
@@ -458,7 +508,7 @@ mod tests {
         let body = b"payload";
         let h = headers(&signed_hex("k1", body));
         assert_eq!(
-            status(verify_signature(&h, body, HEADER, "hex", " , ,")),
+            status(verify_signature(&h, body, HEADER, "hex", None, " , ,")),
             StatusCode::UNAUTHORIZED
         );
     }
@@ -493,7 +543,7 @@ mod tests {
         // malformed header would stop earlier at "signature is not hex" and the
         // monitor would be asserting the wrong thing entirely.
         let wrong = "0".repeat(64);
-        let err = verify_signature(&headers(&wrong), body, HEADER, "hex", "the-real-key")
+        let err = verify_signature(&headers(&wrong), body, HEADER, "hex", None, "the-real-key")
             .expect_err("a zero signature must not verify");
 
         assert_eq!(err.0, StatusCode::UNAUTHORIZED);
@@ -508,7 +558,7 @@ mod tests {
         let body = b"payload";
         let h = headers(&signed_hex("k1", body));
         assert_eq!(
-            status(verify_signature(&h, body, HEADER, "base32", "k1")),
+            status(verify_signature(&h, body, HEADER, "base32", None, "k1")),
             StatusCode::INTERNAL_SERVER_ERROR
         );
     }

@@ -31,6 +31,8 @@
 //! `sandbox_token_fixed` ([`refuse_edit`]). It is listed, read and revoked like
 //! the caller's other tokens.
 
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use entity::prelude::{Apps, Organizations};
 use entity::{api_tokens, apps, organizations};
@@ -80,11 +82,47 @@ async fn mintable(
     actor: &RequestActor,
     wanted: &[String],
 ) -> Result<Vec<apps::Model>, TokenError> {
+    let (found, org_slugs) = apps_named(db, wanted).await?;
+    let standing = standing_of(db, actor).await?;
+    // `raw` names `app` by its id, or by its `<org>/<app>` reference. The
+    // browser's `/cli-auth` page posts ids it resolved from the token options;
+    // a remote request (`oxyc … --remote`) has no page to resolve on and posts
+    // references, which is how a person names an app to the CLI anyway.
+    let names = |raw: &str, app: &apps::Model| match Uuid::parse_str(raw) {
+        Ok(id) => app.id == id,
+        Err(_) => org_slugs
+            .get(&app.org_id)
+            .is_some_and(|org| raw == format!("{org}/{}", app.slug)),
+    };
+    wanted
+        .iter()
+        .map(|raw| {
+            found
+                .iter()
+                .find(|app| names(raw, app) && may_mint_in(&standing, app.org_id))
+                .cloned()
+                .ok_or_else(|| TokenError::AppNotFound(raw.clone()))
+        })
+        .collect()
+}
+
+/// Every app `wanted` could name, by id or by `<org>/<app>` reference, and
+/// the slug of each org a reference resolved through (to match a reference
+/// back to its app without a query per entry).
+async fn apps_named(
+    db: &DatabaseConnection,
+    wanted: &[String],
+) -> Result<(Vec<apps::Model>, HashMap<Uuid, String>), TokenError> {
     let ids: Vec<Uuid> = wanted
         .iter()
         .filter_map(|raw| Uuid::parse_str(raw).ok())
         .collect();
-    let found = if ids.is_empty() {
+    let refs: Vec<(&str, &str)> = wanted
+        .iter()
+        .filter(|raw| Uuid::parse_str(raw).is_err())
+        .filter_map(|raw| raw.split_once('/'))
+        .collect();
+    let mut found = if ids.is_empty() {
         Vec::new()
     } else {
         Apps::find()
@@ -92,18 +130,21 @@ async fn mintable(
             .all(db)
             .await?
     };
-    let standing = standing_of(db, actor).await?;
-    wanted
-        .iter()
-        .map(|raw| {
-            let id = Uuid::parse_str(raw).ok();
-            found
-                .iter()
-                .find(|app| Some(app.id) == id && may_mint_in(&standing, app.org_id))
-                .cloned()
-                .ok_or_else(|| TokenError::AppNotFound(raw.clone()))
-        })
-        .collect()
+    let mut org_slugs = HashMap::new();
+    if !refs.is_empty() {
+        let orgs = Organizations::find()
+            .filter(organizations::Column::Slug.is_in(refs.iter().map(|(org, _)| *org)))
+            .all(db)
+            .await?;
+        let by_ref = Apps::find()
+            .filter(apps::Column::OrgId.is_in(orgs.iter().map(|o| o.id)))
+            .filter(apps::Column::Slug.is_in(refs.iter().map(|(_, app)| *app)))
+            .all(db)
+            .await?;
+        org_slugs.extend(orgs.into_iter().map(|o| (o.id, o.slug)));
+        found.extend(by_ref);
+    }
+    Ok((found, org_slugs))
 }
 
 /// A mint that has passed every check a session can make: its shape, and who

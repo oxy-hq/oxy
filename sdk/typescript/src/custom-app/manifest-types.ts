@@ -256,6 +256,14 @@ export interface OxyAppWebhookManifest {
   signatureHeader: string;
   /** How the digest is encoded. Default `hex`. */
   encoding?: "hex" | "base64";
+  /**
+   * A fixed prefix the provider puts before the digest, stripped before it
+   * is decoded: GitHub sends `sha256=<hex>` in `x-hub-signature-256`. Declare
+   * it and a delivery without it is refused; leave it out for a provider that
+   * sends the bare digest (Uber, Toast, Shopify).
+   * @pattern \S
+   */
+  signaturePrefix?: string;
 }
 
 /** `functions.<name>.fetch`: per-function `ctx.fetch` limits. */

@@ -289,6 +289,11 @@
           "type": "string",
           "enum": ["hex", "base64"],
           "description": "How the digest is encoded. Default `hex`."
+        },
+        "signaturePrefix": {
+          "type": "string",
+          "description": "A fixed prefix the provider puts before the digest, stripped before it is decoded: GitHub sends `sha256=<hex>` in `x-hub-signature-256`. Declare it and a delivery without it is refused; leave it out for a provider that sends the bare digest (Uber, Toast, Shopify).",
+          "pattern": "\\S"
         }
       },
       "required": ["secretVar", "signatureHeader"],

@@ -41,19 +41,21 @@ use super::app_function::{
 };
 use crate::custom_apps_env_resolve::{resolve_function_environment, sandbox_row};
 use crate::custom_apps_functions::check_run::{self, Asked, TriggerError};
-use crate::custom_apps_functions::{FunctionJobTrigger, function_webhook_contract};
+use crate::custom_apps_functions::{
+    FunctionJobTrigger, WebhookContract, function_webhook_contract,
+};
 use crate::custom_apps_sandboxes::activity::is_past_idle_expiry;
 use crate::custom_apps_secrets::scope::secret_name;
 
 type Refusal = (StatusCode, String);
 
 /// A webhook endpoint that exists: the app, the environment, the function,
-/// and its contract `(secretVar, signatureHeader, encoding)`.
+/// and its contract (`secretVar`, `signatureHeader`, `encoding`, `signaturePrefix`).
 struct Endpoint {
     app: entity::apps::Model,
     environment: AppEnvironment,
     function: String,
-    contract: (String, String, String),
+    contract: WebhookContract,
 }
 
 /// `POST /api/webhooks/apps-env/{environment}/{org_slug}/{app_slug}/{function_name}`
@@ -75,9 +77,16 @@ pub async fn app_function_env_webhook(
     let endpoint = resolve_endpoint(&db, &path).await?;
     // Past this point the endpoint is admitted to exist, so failures are 401 —
     // the caller has proven nothing yet.
-    let (secret_var, signature_header, encoding) = &endpoint.contract;
-    let keys = environment_secret(&endpoint, secret_var).await?;
-    verify_signature(&headers, &body, signature_header, encoding, &keys)?;
+    let contract = &endpoint.contract;
+    let keys = environment_secret(&endpoint, &contract.secret_var).await?;
+    verify_signature(
+        &headers,
+        &body,
+        &contract.signature_header,
+        &contract.encoding,
+        contract.signature_prefix.as_deref(),
+        &keys,
+    )?;
     enqueue(&db, &endpoint, &body).await
 }
 
