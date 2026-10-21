@@ -1,0 +1,135 @@
+# Builds and tests the native Oxygen apps: mobile/android (Kotlin/Compose) and mobile/ios
+# (SwiftUI). Runs only for changes under mobile/ and to this file.
+#
+# The main CI (ci.yaml) has nothing to run for a change under mobile/ only: every job after
+# `changesets` is gated on a changesets.yaml filter, and none of them matches mobile/, so such a
+# PR runs the ~20 s Changesets job there and these two here.
+name: Mobile apps
+
+on:
+  pull_request:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile.yaml"
+  workflow_dispatch:
+
+concurrency:
+  group: mobile-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+# Both apps exist, so neither job skips when its folder is missing: a missing app or Gradle
+# wrapper fails the step that needs it.
+jobs:
+  android:
+    name: Android app (build, unit tests, lint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # The JDK Android Studio bundles, which the app is built with locally. The runner's
+      # Android SDK is used as is; AGP downloads a missing compileSdk platform itself.
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+          cache-dependency-path: |
+            mobile/android/**/*.gradle.kts
+            mobile/android/gradle/libs.versions.toml
+            mobile/android/gradle/wrapper/gradle-wrapper.properties
+
+      # No Firebase config here (OXYGEN_FIREBASE_* unset), so the app builds with push off.
+      - name: Build the debug app, run the unit tests and lint
+        working-directory: mobile/android
+        run: ./gradlew --no-daemon assembleDebug testDebugUnitTest lintDebug
+
+      - name: Keep the test and lint reports
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: android-reports
+          path: |
+            mobile/android/app/build/reports/
+            mobile/android/app/build/test-results/
+          retention-days: 7
+
+  ios:
+    name: iOS app (build, unit tests)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # The image carries several Xcodes (Xcode_<version>.app) and defaults to an older one. The
+      # app needs the iOS 26.1 SDK (`#available(iOS 26.1, *)`), so take the newest release, a beta
+      # only if that is all there is, and the default when none is named that way.
+      - name: Select the newest Xcode
+        run: |
+          set -euo pipefail
+          xcodes="$(find /Applications -maxdepth 1 -name 'Xcode_*.app' | sort -V)"
+          xcode="$(grep -iv beta <<<"$xcodes" | tail -1 || true)"
+          xcode="${xcode:-$(tail -1 <<<"$xcodes")}"
+          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
+          xcodebuild -version
+
+      # An available iPhone on the newest iOS runtime the selected Xcode has.
+      - name: Pick a simulator
+        id: simulator
+        run: |
+          set -euo pipefail
+          udid="$(xcrun simctl list devices available --json | python3 -c '
+          import json, re, sys
+          best = None
+          for runtime, devices in json.load(sys.stdin)["devices"].items():
+              match = re.search(r"iOS-(\d+)-(\d+)", runtime)
+              if not match:
+                  continue
+              version = (int(match[1]), int(match[2]))
+              for device in devices:
+                  if device["name"].startswith("iPhone") and (best is None or version > best[0]):
+                      best = (version, device["udid"], device["name"])
+          if best is None:
+              sys.exit("no available iPhone simulator")
+          print(f"{best[2]}, iOS {best[0][0]}.{best[0][1]}", file=sys.stderr)
+          print(best[1])
+          ')"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: Build the app and its tests
+        run: |
+          set -euo pipefail
+          xcodebuild build-for-testing \
+            -project mobile/ios/Oxygen.xcodeproj -scheme Oxygen \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -derivedDataPath build/ios CODE_SIGNING_ALLOWED=NO
+
+      - name: Run the unit tests
+        run: |
+          set -euo pipefail
+          xcodebuild test-without-building \
+            -project mobile/ios/Oxygen.xcodeproj -scheme Oxygen \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -derivedDataPath build/ios -parallel-testing-enabled NO \
+            -resultBundlePath build/ios/Oxygen.xcresult
+
+      - name: Keep the test results
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ios-test-results
+          path: build/ios/Oxygen.xcresult
+          retention-days: 7

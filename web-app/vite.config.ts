@@ -317,6 +317,19 @@ export default defineConfig(({ mode }) => {
       // this keeps that choice from being made by a bind default nobody read.
       host: rootEnv.OXY_DEV_HOST || "127.0.0.1",
       proxy: {
+        // Listed before "/api": the first matching key wins. `/api/me/apps`
+        // answers absolute app URLs built from the request's Host, because the
+        // native apps that call it have no origin to resolve a path against.
+        // Rewriting Host (`changeOrigin`) made it answer `localhost:3000/…`, a
+        // host the simulator's session cookie (set for 127.0.0.1, or 10.0.2.2 on
+        // the Android emulator) doesn't reach, so every app opened on the login
+        // page. Keeping the caller's Host makes the URLs point back at this
+        // server; `xfwd` supplies the http scheme.
+        "/api/me/apps": {
+          target: DEV_PROXY_TARGET,
+          changeOrigin: false,
+          xfwd: true
+        },
         // `xfwd: true` for the same reason as /customer-apps below, but for a
         // different gate: oxy's customer-app data gate (check_custom_app_gates)
         // checks the browser's Origin against an allowlist of canonical dev
