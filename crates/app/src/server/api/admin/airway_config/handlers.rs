@@ -47,8 +47,8 @@ use uuid::Uuid;
 
 use super::super::internal_jobs::{connect, db_err, error_body};
 use super::KNOWN_SOURCE_KINDS;
+use crate::server::api::admin::org_filter::scope_org_filter;
 use crate::server::api::admin::scope;
-use crate::server::api::admin::scope::scope_org_filter;
 
 /// A config row's two editable fields plus its freshness. Shared shape for
 /// both the global row and a workspace override — `updated_at` lets Task 5's

@@ -1,4 +1,5 @@
-//! Surface crates import `oxy-app` through `oxy_app::surface` only.
+//! Surface crates import `oxy-app` through `oxy_app::surface` only, and `oxy-app`
+//! holds no custom-app module.
 //!
 //! Rule S4 in `internal-docs/domain-boundaries.md`. `crates/app/src/surface.rs`
 //! is the contract between the platform runtime and the extracted HTTP surfaces
@@ -14,6 +15,16 @@
 //! (which the prelude now provides). Aliasing the crate (`use oxy_app as x`,
 //! `extern crate oxy_app`) is refused outright: it would hide every later
 //! path from the scan.
+//!
+//! ## The custom-app vertical is out of `oxy-app`
+//!
+//! This file also holds what `tests/custom_apps/custom_apps_boundary.rs` used to:
+//! that test kept the custom-app modules behind a named list of seams into the rest
+//! of `oxy-app`, by scanning `crate::` imports. The modules are in
+//! `oxy-api-custom-apps` now, so their reach into `oxy-app` is an `oxy_app::` path,
+//! which the first test below holds to the prelude, and the second test keeps the
+//! vertical from growing back: `oxy-app` has no `custom_app*` module that is not a
+//! re-export of one that moved, except the two named in [`NOT_SHIMS`].
 
 use std::path::{Path, PathBuf};
 
@@ -32,7 +43,6 @@ const BACKLOG: &[(&str, &str)] = &[
         "api-tenancy",
         "server::api::org_teams::service::write_access",
     ),
-    ("api-tenancy", "server::api::admin::apps"),
     ("api-tenancy", "server::api::admin::WorkspaceHealthRow"),
     ("api-tenancy", "server::api::admin::health_rollup"),
     // billing: seat sync when a member is added or removed
@@ -198,5 +208,154 @@ fn every_backlog_entry_is_still_a_real_reach() {
         "these BACKLOG entries no longer match any import — the reach was \
          removed, so delete the entry:\n  {}",
         stale.join("\n  ")
+    );
+}
+
+/// `custom_app*` files and directories `oxy-app` still has that are not a
+/// re-export, each with why. **Not a backlog to grow.**
+const NOT_SHIMS: &[(&str, &str)] = &[(
+    "server/api/custom_apps_gates.rs",
+    "the data plane's gate (`check_custom_app_gates` answered as a response, \
+     `parse_versioned_body`) and the project-context composition root \
+     (`build_project_context*`), which `projects::{query, semantic_query, agent_ask, \
+     automation_run, ...}` call and which build an `OxyProjectContext`. The decisions \
+     are `oxy_custom_apps::gate`; the function host reaches the context builder \
+     through `FunctionQueryExecutor::build_project_context`.",
+)];
+
+fn src_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            src_files(&path, out);
+        } else {
+            out.push(path);
+        }
+    }
+}
+
+/// Whether a file is only comments, blank lines, `use`/`pub use` items and the
+/// attributes and `mod` lines that carry them.
+fn is_reexport_only(text: &str) -> bool {
+    let mut in_use = false;
+    for line in text.lines() {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with("//") {
+            continue;
+        }
+        if in_use {
+            in_use = !t.contains(';');
+            continue;
+        }
+        if t.starts_with("pub use ") || t.starts_with("pub(crate) use ") || t.starts_with("use ") {
+            in_use = !t.contains(';');
+            continue;
+        }
+        if t.starts_with("#[") {
+            continue;
+        }
+        return false;
+    }
+    true
+}
+
+#[test]
+fn oxy_app_holds_no_custom_app_module_except_shims() {
+    let app_src = crates_dir().join("app").join("src");
+    let mut files = Vec::new();
+    src_files(&app_src, &mut files);
+    assert!(
+        files.len() > 200,
+        "the walk found only {} files under crates/app/src — it lost its way",
+        files.len()
+    );
+    let mut offenders = Vec::new();
+    for file in &files {
+        let rel = file
+            .strip_prefix(&app_src)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        let named = rel
+            .split('/')
+            .any(|seg| seg.starts_with("custom_app") || seg == "workspace_custom_apps.rs");
+        if !named || !rel.ends_with(".rs") {
+            continue;
+        }
+        if NOT_SHIMS.iter().any(|(path, _)| *path == rel) {
+            continue;
+        }
+        let text = std::fs::read_to_string(file).unwrap_or_default();
+        if !is_reexport_only(&text) {
+            offenders.push(rel);
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "`oxy-app` holds custom-app code again. The custom-app vertical lives in \
+         `crates/api-custom-apps` (or `oxy-custom-apps` / `oxy-app-core` when `oxy-app` \
+         also uses it); a file here may only re-export a moved module:\n  {}",
+        offenders.join("\n  ")
+    );
+    for (path, _) in NOT_SHIMS {
+        assert!(
+            app_src.join(path).exists(),
+            "NOT_SHIMS names `{path}`, which is gone — delete the entry"
+        );
+    }
+}
+
+#[test]
+fn surface_sources_do_not_take_the_test_fixtures() {
+    // `oxy_app::surface::testing` is for integration tests; a surface's `src` that
+    // took from it would make the data plane's handlers part of its contract.
+    let mut found = Vec::new();
+    for (name, dir) in surface_crates() {
+        let mut files = Vec::new();
+        rust_files(&dir.join("src"), &mut files);
+        for file in files {
+            let text = std::fs::read_to_string(&file).unwrap_or_default();
+            for (i, line) in text.lines().enumerate() {
+                let code = line.split("//").next().unwrap_or_default();
+                if code.contains("surface::testing") {
+                    found.push(format!("{name}: {}:{}", file.display(), i + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "src takes `surface::testing`:\n  {}",
+        found.join("\n  ")
+    );
+}
+
+#[test]
+fn no_surface_crate_depends_on_another_surface_crate() {
+    // Rule S3: a surface that needs another surface's logic gets it from a crate
+    // below both, or through a port the composition root fills (`AppLifecycle`
+    // is one). Not even a dev-dependency: a test that needs both is
+    // `oxy-server`'s.
+    let mut offenders = Vec::new();
+    for (name, dir) in surface_crates() {
+        let manifest = std::fs::read_to_string(dir.join("Cargo.toml")).unwrap_or_default();
+        for (i, line) in manifest.lines().enumerate() {
+            let code = line.split('#').next().unwrap_or_default().trim();
+            let Some((dep, _)) = code.split_once('=') else {
+                continue;
+            };
+            let dep = dep.trim();
+            if dep.starts_with("oxy-api-") && dep != format!("oxy-{name}") {
+                offenders.push(format!("{name}: Cargo.toml:{} depends on {dep}", i + 1));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "a surface crate depends on another surface crate (internal-docs/domain-boundaries.md S3):\n  {}",
+        offenders.join("\n  ")
     );
 }

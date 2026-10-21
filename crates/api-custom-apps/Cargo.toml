@@ -112,6 +112,24 @@ workspace-hack = { version = "0.1", path = "../workspace-hack" }
 [dev-dependencies]
 brotli = { workspace = true }
 tower = { workspace = true, features = ["util"] }
+# The integration tests reuse oxy-app's harness (`#[path]`-included from
+# crates/app/tests/common), which clones a per-run template database and needs
+# every migrator `Schema::All` can apply.
+oxy-app-core = { workspace = true, features = ["test-fixtures"] }
+tokio = { workspace = true, features = ["test-util"] }
+serial_test = { workspace = true }
+oxy-test-utils = { workspace = true }
+oxy-cameras = { workspace = true }
+oxy-compile = { workspace = true }
+agentic-automation = { workspace = true }
+# `sentry::test::with_captured_events` for the custom-app surface tag tests.
+sentry = { workspace = true, features = ["test"] }
+wiremock = { workspace = true }
+testcontainers = { workspace = true, features = [
+    "blocking",
+    "reusable-containers",
+] }
+testcontainers-modules = { workspace = true, features = ["postgres", "clickhouse"] }
 
 [lints]
 workspace = true

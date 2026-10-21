@@ -43,6 +43,23 @@ pub async fn get_app_access(Path(app_id): Path<Uuid>) -> Result<Json<AppAccessDt
     Ok(Json(service::read_access(&db, &app).await?))
 }
 
+/// [`service::write_access`], flushing this process's custom-app access cache and
+/// app-resolution cache once it commits — without that, a revoke keeps working on
+/// this replica until the cache's TTL. (`oxy-app` wraps the same call for the
+/// org's own surface.)
+pub async fn write_access(
+    db: &sea_orm::DatabaseConnection,
+    app: &entity::apps::Model,
+    actor_id: Uuid,
+    req: &SetAppAccessRequest,
+) -> Result<AppAccessDto, StatusCode> {
+    service::write_access(db, app, actor_id, req, &|| {
+        crate::custom_apps_auth::invalidate_access_cache();
+        crate::custom_apps_cache::invalidate_app_resolution_cache_for_app(app.id);
+    })
+    .await
+}
+
 /// `PUT /admin/apps/{app_id}/access`
 pub async fn set_app_access(
     _: oxy_app_core::agent_refusal::RefuseSandboxAgent,
@@ -56,11 +73,7 @@ pub async fn set_app_access(
     // Flushes this process's custom-app access and app-resolution caches once the
     // write commits; without that, a revoke keeps working on this replica until
     // the cache's TTL. (`oxy-app` wraps the same call for the org's own surface.)
-    let out = service::write_access(&db, &app, actor.id, &req, &|| {
-        crate::custom_apps_auth::invalidate_access_cache();
-        crate::custom_apps_cache::invalidate_app_resolution_cache_for_app(app.id);
-    })
-    .await?;
+    let out = write_access(&db, &app, actor.id, &req).await?;
 
     // Into the ORG's append-only log, not just our own tracing. This is the one path
     // where Oxy staff reach into a tenant and change who may see the tenant's data —

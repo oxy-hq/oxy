@@ -112,10 +112,17 @@ type SeamRouter = axum::Router<oxy_app::server::router::AppState>;
 fn api_seam_routes() -> SeamRouter {
     oxy_api_github::routes()
         .merge(oxy_api_tenancy::routes())
-        .merge(oxy_api_tenancy::partner_console::routes())
+        // The partner console publishes a client's app through the custom-app
+        // surface's `AppLifecycle`, which this root hands it (a surface may not
+        // depend on another).
+        .merge(
+            oxy_api_tenancy::partner_console::routes()
+                .layer(axum::Extension(custom_apps_seams::app_lifecycle())),
+        )
         .merge(oxy_api_tenancy::onboarding::routes())
         .merge(oxy_api_documents::routes())
         .merge(oxy_api_frontline::routes())
+        .merge(oxy_api_custom_apps::routes())
 }
 
 /// The sibling crates merged beside the public tree, outside the auth stack.
@@ -125,7 +132,9 @@ fn public_seam_routes() -> SeamRouter {
 
 /// The sibling crates merged inside the `/{workspace_id}` nest.
 fn workspace_seam_routes() -> SeamRouter {
-    oxy_api_tenancy::onboarding::workspace_routes().merge(oxy_api_source_upload::routes())
+    oxy_api_tenancy::onboarding::workspace_routes()
+        .merge(oxy_api_source_upload::routes())
+        .merge(oxy_api_custom_apps::workspace_routes())
 }
 
 /// Every surface this composition root mounts, by seam. `cli` forwards it into
@@ -170,6 +179,7 @@ fn surface_seams() -> SurfaceSeams {
                 .chain(oxy_api_tenancy::partner_console::route_roles())
                 .chain(oxy_api_documents::route_roles())
                 .chain(oxy_api_frontline::route_roles())
+                .chain(oxy_api_custom_apps::route_roles())
                 .copied()
                 .collect(),
         },
@@ -178,6 +188,7 @@ fn surface_seams() -> SurfaceSeams {
             decls: oxy_api_tenancy::onboarding::workspace_route_roles()
                 .iter()
                 .chain(oxy_api_source_upload::route_roles())
+                .chain(oxy_api_custom_apps::workspace_route_roles())
                 .copied()
                 .collect(),
         },
@@ -209,6 +220,9 @@ fn surface_seams() -> SurfaceSeams {
         background: custom_apps_seams::background(),
         outer: Some(custom_apps_seams::outer),
         outer_decls: oxy_api_custom_apps::serve::serve_dispatch_roles().to_vec(),
+        function_runtime: Some(custom_apps_seams::function_runtime()),
+        post_migrate: Some(custom_apps_seams::post_migrate()),
+        example_apps: Some(oxy_api_custom_apps::seed::example_apps()),
     }
 }
 

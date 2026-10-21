@@ -312,6 +312,47 @@ fn landmark_routes_are_present() {
     }
 }
 
+/// `oxy-api-custom-apps` mounts on three seams (api, workspace, public) and the
+/// catalog reaches each through its own seed. One route per seam and per tree, so a
+/// seed that stops resolving (or a source file the walk truncates early) fails here
+/// instead of dropping the console from `oxyc routes`.
+#[test]
+fn the_custom_app_routes_are_catalogued_on_every_seam() {
+    for (method, path) in [
+        ("GET", "/api/apps/mine"),
+        ("GET", "/api/me/apps"),
+        ("POST", "/api/customer-apps"),
+        ("GET", "/api/customer-apps/{id}/secrets"),
+        (
+            "POST",
+            "/api/customer-apps/{id}/environments/{name}/promote",
+        ),
+        ("GET", "/api/customer-apps/oxy-access"),
+        ("POST", "/api/customer-apps/publish"),
+        ("GET", "/api/{workspace_id}/custom-apps"),
+        ("POST", "/api/{workspace_id}/custom-apps/{app_id}/secrets"),
+        ("POST", "/api/customer-apps/publish/oidc-exchange"),
+        (
+            "POST",
+            "/api/webhooks/apps/{org_slug}/{app_slug}/{function_name}",
+        ),
+        ("GET", "/api/apps/{org_slug}/{app_slug}/build-config"),
+        ("GET", "/api/projects/{project_id}/shell-context"),
+        ("POST", "/api/customer-apps/{project_id}/events"),
+        (
+            "GET",
+            "/api/customer-apps/{org_slug}/{app_slug}/availability",
+        ),
+    ] {
+        assert!(
+            routes()
+                .iter()
+                .any(|r| r.method == method && r.path == path),
+            "custom-app route {method} {path} missing from the catalog"
+        );
+    }
+}
+
 /// The previews tree is mounted beside the workspace tree, reached by its
 /// own seed in `build_route_catalog.rs`; its fleet routes must be listed
 /// too, or `oxyc routes previews` hides the checks endpoint.

@@ -13,6 +13,7 @@
 use axum::Json;
 use axum::extract::Path;
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use entity::apps;
 use entity::prelude::Apps;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
@@ -22,12 +23,14 @@ use uuid::Uuid;
 
 use super::{db, internal, require_org_scope};
 use crate::partner_console::partner_context::PartnerActor;
-use admin_apps::AuditedBy;
-use oxy_app::server::api::admin::apps::handlers as admin_apps;
+use axum::Extension;
+use axum::response::Response;
+use oxy_app_core::app_lifecycle::AppLifecycle;
 use oxy_tenancy::org_teams::dto::{
     AppAccessDto, AppAccessSummaryDto, OrgMemberOptionDto, SetAppAccessRequest, TeamDto,
 };
 use oxy_tenancy::org_teams::service as access_service;
+use std::sync::Arc;
 // The cache-flushing wrapper: the flushed caches live in oxy-app (custom apps).
 use oxy_app::server::api::org_teams::service::write_access;
 use oxy_app_core::audit::{self, ActorType, AuditEntry};
@@ -309,11 +312,14 @@ pub async fn list_grantable_people(
 /// do. Every other failure is the bare status it always was.
 pub async fn publish_app(
     PartnerActor(scope): PartnerActor,
+    Extension(lifecycle): Extension<Arc<dyn AppLifecycle>>,
     actor: oxy_app_core::audit::RequestActor,
     Path((_partner_id, app_id)): Path<(Uuid, Uuid)>,
-) -> Result<Json<PartnerAppDto>, admin_apps::PromoteRefusal> {
-    let db = db().await?;
-    let app = load_managed_app(&db, &scope, app_id).await?;
+) -> Result<Json<PartnerAppDto>, Response> {
+    let db = db().await.map_err(IntoResponse::into_response)?;
+    let app = load_managed_app(&db, &scope, app_id)
+        .await
+        .map_err(IntoResponse::into_response)?;
     let org_id = app.org_id;
     let (name, slug) = (app.name.clone(), app.slug.clone());
 
@@ -321,8 +327,10 @@ pub async fn publish_app(
     // it repoints production at the draft build, stamps last_promoted_*, and
     // drops the per-app canonical-dir caches. Re-stamping published_at by hand
     // would publish a channel with no live bytes behind it. Its refusal is
-    // answered whole (`PromoteRefusal`), not cut down to a status.
-    let saved = admin_apps::publish_one(&db, app_id, &actor, AuditedBy::Caller).await?;
+    // answered whole (the staff console's `PromoteRefusal`), not cut down to a
+    // status. Reached through the `AppLifecycle` port, which
+    // `oxy-api-custom-apps` implements.
+    let saved = lifecycle.publish(&db, app_id, &actor).await?;
     // Viewers' cached access must drop now, not at TTL (admin does the same).
     oxy_custom_apps::auth::invalidate_access_cache();
 
@@ -341,6 +349,7 @@ pub async fn publish_app(
 /// `DELETE /partners/{id}/apps/{app_id}/publish` — take the app out of view.
 pub async fn unpublish_app(
     PartnerActor(scope): PartnerActor,
+    Extension(lifecycle): Extension<Arc<dyn AppLifecycle>>,
     actor: oxy_app_core::audit::RequestActor,
     Path((_partner_id, app_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<PartnerAppDto>, StatusCode> {
@@ -351,9 +360,7 @@ pub async fn unpublish_app(
 
     // Canonical unpublish: also clears production's build (no dangling pointer)
     // and drops the per-app canonical-dir caches.
-    let saved = admin_apps::unpublish_one(&db, app_id, &actor, AuditedBy::Caller)
-        .await
-        .map_err(|e| e.status)?;
+    let saved = lifecycle.unpublish(&db, app_id, &actor).await?;
     oxy_custom_apps::auth::invalidate_access_cache();
 
     audit::record_best_effort(

@@ -25,8 +25,8 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::common::{Schema, fresh_db};
-use oxy_app::server::api::custom_apps_functions::host::org_directory;
 use oxy_app::server::api::custom_apps_gates::frontline_worker_with_app_grant;
+use oxy_custom_apps::org_directory::org_directory;
 
 /// One org, two workspaces, one app in each.
 struct Fx {

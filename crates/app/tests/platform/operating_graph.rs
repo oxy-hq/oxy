@@ -14,15 +14,13 @@ use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection};
 use uuid::Uuid;
 
 use crate::common::{Schema, fresh_db};
-use oxy_app::server::api::custom_apps_functions::host::{
-    org_assignments_directory, org_places_directory,
-};
 use oxy_app::server::api::operating_graph::assignments::{self, AssignError};
 use oxy_app::server::api::operating_graph::dto::{
     AssignmentSpec, AssignmentsQuery, UpdateLocation,
 };
 use oxy_app::server::api::operating_graph::locations as places;
 use oxy_app::server::api::operating_graph::positions;
+use oxy_custom_apps::org_directory::{org_assignments_directory, org_places_directory};
 
 struct Fx {
     org: Uuid,
@@ -921,10 +919,9 @@ async fn review_round_two_a_taken_name_a_changed_supervisor_and_a_supervisor_out
     assert_eq!(row["supervisor_name"], serde_json::Value::Null);
 
     // And `people()` is built on the same audience: Nia is named, Lead is not.
-    let people =
-        oxy_app::server::api::custom_apps_functions::host::org_directory(&db, fx.org, fx.app)
-            .await
-            .expect("people");
+    let people = oxy_custom_apps::org_directory::org_directory(&db, fx.org, fx.app)
+        .await
+        .expect("people");
     let names: Vec<&str> = people["people"]
         .as_array()
         .unwrap()

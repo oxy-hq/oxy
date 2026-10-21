@@ -162,13 +162,13 @@ fn the_sandbox_only_rows_are_held_by_their_handler() {
         Action::AppNonProduction,
         &app_in(EnvFacet::Staging)
     ));
-    let secrets = source("app/src/server/api/custom_apps_secrets/agent.rs");
+    let secrets = source("api-custom-apps/src/custom_apps_secrets/agent.rs");
     assert!(
         secrets.contains("if is_sandbox(environment) && may_open_environment("),
         "S1–S3: `secrets::agent::authorize` no longer asks for a sandbox before it asks the \
          model, so a token granted staging would read and write staging's secrets"
     );
-    let handlers = source("app/src/server/api/custom_apps_sandboxes/handlers.rs");
+    let handlers = source("api-custom-apps/src/custom_apps_sandboxes/handlers.rs");
     assert!(
         handlers.contains("if deletes_a_fixed_environment(caller, door, &environment) => false"),
         "E3: the delete door no longer refuses a sandbox agent token production and staging"

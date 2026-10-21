@@ -19,8 +19,7 @@
 
 use std::collections::BTreeSet;
 
-const CLI_CAPABILITIES_TS: &str =
-    include_str!("../../../../../../sdk/cli/src/publish/capabilities.ts");
+const CLI_CAPABILITIES_TS: &str = include_str!("../../../../sdk/cli/src/publish/capabilities.ts");
 const HOST_RS: &str = include_str!("host.rs");
 
 /// Fields of `FunctionCapabilities` that are NOT gates: a retention policy and

@@ -16,6 +16,7 @@ pub mod agent_body;
 #[cfg(any(test, feature = "test-fixtures"))]
 pub mod agent_fixture;
 pub mod agent_refusal;
+pub mod app_lifecycle;
 pub mod app_state;
 pub mod audience;
 pub mod audit;

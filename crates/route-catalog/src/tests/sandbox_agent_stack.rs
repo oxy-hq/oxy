@@ -207,16 +207,16 @@ fn source(relative: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
-/// The `/customer-apps` nest of `router/global.rs`: from its mount to the
-/// label that closes it, whole-line comments dropped (they carry parentheses
+/// The `/customer-apps` nest of `oxy-api-custom-apps`' `routes()`: from its mount to
+/// the end of the function, whole-line comments dropped (they carry parentheses
 /// and name the symbols this reads).
 fn console_nest(router: &str) -> String {
     let start = router
-        .find("\"/customer-apps\",\n            RouteRole::FleetOk,")
-        .expect("the /customer-apps nest is mounted in router/global.rs");
+        .find("\"/customer-apps\",\n            admin::apps::guarded(")
+        .expect("the /customer-apps nest is mounted in oxy-api-custom-apps");
     let end = router[start..]
-        .find("\"app registration rows plus S3 bundles\"")
-        .expect("the nest's closing label");
+        .find("/// What [`routes`] declares")
+        .expect("the end of `routes()`");
     router[start..start + end]
         .lines()
         .filter(|line| !line.trim_start().starts_with("//"))
@@ -253,7 +253,7 @@ fn guarded_span(nest: &str) -> (usize, usize) {
 /// are named once, in `admin::apps::guarded`, which the nest calls.
 #[test]
 fn the_console_mounts_the_layers_the_table_was_written_from() {
-    let router = source("app/src/server/router/global.rs");
+    let router = source("api-custom-apps/src/lib.rs");
     let nest = console_nest(&router);
     guarded_span(&nest);
     assert_eq!(
@@ -263,7 +263,7 @@ fn the_console_mounts_the_layers_the_table_was_written_from() {
          `admin::apps::guarded`, and a layer added beside it covers one mount only"
     );
 
-    let stack = source("app/src/server/api/admin/apps/mod.rs");
+    let stack = source("api-custom-apps/src/admin/apps/mod.rs");
     let guarded = &stack[stack.find("pub fn guarded<S>").expect("guarded")..];
     let guarded = &guarded[..guarded.find("\n}\n").expect("end of guarded")];
     let layers = guarded.matches(".layer(middleware::from_fn(").count();
@@ -295,11 +295,11 @@ fn the_console_mounts_the_layers_the_table_was_written_from() {
 /// stack is the handler's decision alone, as the table says.
 #[test]
 fn the_publish_route_is_mounted_outside_the_console_layers() {
-    let router = source("app/src/server/router/global.rs");
+    let router = source("api-custom-apps/src/lib.rs");
     let nest = console_nest(&router);
     let (open, close) = guarded_span(&nest);
     let publish = nest
-        .find("post(crate::server::api::custom_apps_publish::publish_handler)")
+        .find("post(custom_apps_publish::publish_handler)")
         .expect("the publish route is in the nest");
     assert!(publish > close, "P1 moved under the console layers");
     assert!(

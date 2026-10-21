@@ -125,7 +125,37 @@ pub mod listener {
 /// workspace the partner seed made for an org, and whether the database is one a
 /// seed may touch.
 pub mod seed {
+    pub use crate::cli::commands::seed::{SeedOptions, clear_demo, seed_demo_with};
     pub use crate::cli::commands::seed_partners::{is_local_db, seeded_workspace_id};
+}
+
+/// The seams a surface crate builds for the composition root to hand `oxy-app`
+/// (`SurfaceSeams`): the task executors, the background jobs and the demo seed's
+/// half.
+pub mod seams {
+    pub use crate::server::router::{
+        BackgroundDeps, BackgroundSeam, ExampleAppsSeam, MigrateReport, TaskDeps, TaskSeam,
+    };
+}
+
+/// What the integration tests of the surface crates drive: the data plane's
+/// handlers and the served router, which the custom-app tests exercise in a
+/// staging or sandbox environment, and the platform fixtures they stand up
+/// around them. Tests only; no surface's `src` takes anything from here.
+pub mod testing {
+    pub use crate::agentic_wiring;
+    pub use crate::server::api::admin::app_publish_tokens;
+    pub use crate::server::api::middlewares::{app_publish_token_scope, workspace_context};
+    pub use crate::server::api::{
+        custom_apps_gates, notifications, projects, schedules, secrets, semantic, world_model_graph,
+    };
+    pub use crate::server::router::{
+        SurfaceSeam, SurfaceSeams, api_router, external_auth_layers, flat_api_surface,
+    };
+    pub use crate::server::{compile_config_gate, compile_maintenance, previews};
+
+    /// The router module itself, for the items tests name beside the ones above.
+    pub use crate::server::router;
 }
 
 /// Router state for tests that mount a single handler.
@@ -150,7 +180,10 @@ pub use crate::server::api::admin::assume;
 
 /// Staff-scope fencing: whether a bounded platform grant reaches this org.
 /// Platform authz, applied inside admin handlers where the org is known.
-pub use crate::server::api::admin::scope as admin_scope;
+pub mod admin_scope {
+    pub use crate::server::api::admin::org_filter::{scope_org_filter, scope_org_filter_checked};
+    pub use crate::server::api::admin::scope::*;
+}
 
 /// Transactional email delivery (SES, or the local preview provider).
 pub use crate::emails;

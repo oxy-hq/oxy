@@ -16,7 +16,6 @@ mod audience;
 mod catalog;
 mod delivery;
 mod fixture;
-mod function_action;
 mod inbox;
 mod settings;
 mod settings_delivery;

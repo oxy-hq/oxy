@@ -33,8 +33,8 @@ use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_oltp::api::admin as inner;
 use uuid::Uuid;
 
+use super::org_filter::scope_org_filter;
 use super::scope;
-use super::scope::scope_org_filter;
 
 pub fn router<S>() -> Router<S>
 where

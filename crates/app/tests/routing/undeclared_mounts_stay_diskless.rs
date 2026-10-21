@@ -61,6 +61,11 @@ const DECLARED_ACCESSES: &[(&str, &str)] = &[
     // slot so naming the type later does not read as a new disk access. The
     // working-copy needles still apply to the file.
     ("api-source-upload/src/source_upload.rs", "ConfigManager"),
+    // The demo seed (`oxy seed`, and the integration fixture) deploys the example
+    // apps from a workspace path it is handed. It is a CLI step, mounted on no
+    // route at all, so no pod placement applies.
+    ("api-custom-apps/src/seed_apps.rs", "workspace_path"),
+    ("api-custom-apps/src/seed.rs", "workspace_path"),
 ];
 
 /// Every `.rs` file under `dir` — or `dir` itself, when it names one file.

@@ -73,20 +73,14 @@ const SHARED_HARNESS: &str = "app/tests/common";
 /// for serialization. It isn't — nextest test-groups are independent semaphores,
 /// so a `max-threads` cap in one group constrains nothing against another, and a
 /// `db-per-test` member can run concurrently with the `serial-db` tests whose
-/// rows it rewrites. `platform` was the live example; `custom_apps` and
+/// rows it rewrites. `platform` was the live example; `custom_apps` (now
+/// `oxy-api-custom-apps`' `tests/integration`, found by the sibling scan) and
 /// `airhouse` were the same hole still open.
 ///
 /// The cost of scanning a binary that turns out to be clean is zero. The cost of
 /// omitting one is a race nobody sees until CI flakes in another crate. So: all
 /// of them, and any new one goes here on the day it's created.
-const MIXED_BINARIES: &[&str] = &[
-    "authz",
-    "slack",
-    "platform",
-    "custom_apps",
-    "airhouse",
-    "routing",
-];
+const MIXED_BINARIES: &[&str] = &["authz", "slack", "platform", "airhouse", "routing"];
 
 /// Ways a test reaches a database.
 ///

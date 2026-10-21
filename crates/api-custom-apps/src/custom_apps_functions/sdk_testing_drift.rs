@@ -33,11 +33,9 @@ use super::cli_capabilities_drift::{
     NOT_GATES, cli_entries, host_capability_fields, host_ops_gated_by, quoted, strip_comments,
 };
 
-const CONTRACT_TS: &str =
-    include_str!("../../../../../../sdk/typescript/src/testing/host-contract.ts");
-const FUNCTION_LINT_TS: &str =
-    include_str!("../../../../../../sdk/cli/src/publish/function-lint.ts");
-const GATES_TS: &str = include_str!("../../../../../../sdk/typescript/src/testing/gates.ts");
+const CONTRACT_TS: &str = include_str!("../../../../sdk/typescript/src/testing/host-contract.ts");
+const FUNCTION_LINT_TS: &str = include_str!("../../../../sdk/cli/src/publish/function-lint.ts");
+const GATES_TS: &str = include_str!("../../../../sdk/typescript/src/testing/gates.ts");
 
 /// Every file a `source:` in the contract may name, by that name.
 const SOURCES: &[(&str, &str)] = &[
@@ -48,7 +46,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("host/notify_op.rs", include_str!("host/notify_op.rs")),
     (
         "notifications/input.rs",
-        include_str!("../../../../../app-core/src/notifications/input.rs"),
+        include_str!("../../../app-core/src/notifications/input.rs"),
     ),
     (
         "host/platform_facts/serve.rs",
@@ -68,20 +66,17 @@ const SOURCES: &[(&str, &str)] = &[
     ),
     (
         "transaction.rs",
-        include_str!("../../../../../agentic/connector/src/transaction.rs"),
+        include_str!("../../../agentic/connector/src/transaction.rs"),
     ),
     (
         "postgres_tx/convert.rs",
-        include_str!("../../../../../agentic/connector/src/postgres_tx/convert.rs"),
+        include_str!("../../../agentic/connector/src/postgres_tx/convert.rs"),
     ),
     (
         "connector.rs",
-        include_str!("../../../../../agentic/connector/src/connector.rs"),
+        include_str!("../../../agentic/connector/src/connector.rs"),
     ),
-    (
-        "schema.rs",
-        include_str!("../../../../../oltp/src/schema.rs"),
-    ),
+    ("schema.rs", include_str!("../../../oltp/src/schema.rs")),
 ];
 
 /// The marker every capability-gate refusal in the host carries. Scanned so a

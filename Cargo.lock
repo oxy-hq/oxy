@@ -9280,6 +9280,7 @@ dependencies = [
 name = "oxy-api-custom-apps"
 version = "0.5.156"
 dependencies = [
+ "agentic-automation",
  "agentic-connector",
  "agentic-core",
  "agentic-http",
@@ -9316,6 +9317,8 @@ dependencies = [
  "oxy-auth",
  "oxy-authz",
  "oxy-billing",
+ "oxy-cameras",
+ "oxy-compile",
  "oxy-custom-apps",
  "oxy-observability",
  "oxy-oltp",
@@ -9324,6 +9327,7 @@ dependencies = [
  "oxy-slack-client",
  "oxy-telemetry",
  "oxy-tenancy",
+ "oxy-test-utils",
  "parking_lot 0.12.5",
  "parquet",
  "regex",
@@ -9334,6 +9338,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "serde_yaml",
+ "serial_test",
  "sha2 0.11.0",
  "slugify",
  "sourcemap",
@@ -9341,6 +9346,8 @@ dependencies = [
  "sqlx",
  "tar",
  "tempfile",
+ "testcontainers",
+ "testcontainers-modules",
  "thiserror 2.0.20",
  "tokio",
  "tokio-postgres",
@@ -9351,6 +9358,7 @@ dependencies = [
  "url",
  "urlencoding",
  "uuid",
+ "wiremock",
  "workspace-hack",
 ]
 

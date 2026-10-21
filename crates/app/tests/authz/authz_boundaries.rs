@@ -139,7 +139,7 @@ const ALLOWED: &[(&str, &str)] = &[
          allows, so merging them would silently change behaviour",
     ),
     (
-        "app/src/server/api/custom_apps_functions/host/platform_facts/",
+        "api-custom-apps/src/custom_apps_functions/host/platform_facts/",
         "the one reader of the internal orgs: `ctx.platform.facts`' gate (`serve::admit`), which \
          hands the list it checked to the build as its staff. The host op in `host.rs` takes the \
          list from the gate and never reads it",

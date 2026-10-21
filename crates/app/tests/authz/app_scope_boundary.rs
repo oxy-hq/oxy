@@ -195,7 +195,7 @@ fn read_applies_the_stripping() {
 /// (`/customer-apps`) must wear it.
 #[test]
 fn every_app_route_tree_wears_the_stack_that_carries_the_scope_guard() {
-    let stack = read("crates/app/src/server/api/admin/apps/mod.rs");
+    let stack = read("crates/api-custom-apps/src/admin/apps/mod.rs");
     assert!(
         stack.contains("app_scope_guard::enforce_app_scope"),
         "`admin::apps::guarded` no longer applies `app_scope_guard::enforce_app_scope`.\n\
@@ -206,11 +206,11 @@ fn every_app_route_tree_wears_the_stack_that_carries_the_scope_guard() {
          stated decision."
     );
 
-    let global = read("crates/app/src/server/router/global.rs");
+    let global = read("crates/api-custom-apps/src/lib.rs");
     for mount in ["admin::apps::guarded(", "admin::apps::router()"] {
         assert!(
             global.contains(mount),
-            "`router/global.rs` no longer mounts the admin app handlers through `{mount}`"
+            "`oxy-api-custom-apps` no longer mounts the admin app handlers through `{mount}`"
         );
     }
     assert_eq!(
@@ -234,7 +234,7 @@ fn every_app_route_tree_wears_the_stack_that_carries_the_scope_guard() {
 /// cross-tenant delete with no discovery step.
 #[test]
 fn every_batch_endpoint_fences_its_ids_by_scope() {
-    let src = read("crates/app/src/server/api/admin/apps/handlers.rs");
+    let src = read("crates/api-custom-apps/src/admin/apps/handlers.rs");
 
     let mut checked = 0;
     for chunk in src.split("pub async fn ").skip(1) {
@@ -279,8 +279,8 @@ fn every_batch_endpoint_fences_its_ids_by_scope() {
 /// `app_scope_guard`'s module docs and in `internal-docs/roles-and-authorization.md`.
 #[test]
 fn the_documented_scope_exceptions_keep_their_checks() {
-    let handlers = read("crates/app/src/server/api/admin/apps/handlers.rs");
-    let oxy_access = read("crates/app/src/server/api/admin/oxy_access.rs");
+    let handlers = read("crates/api-custom-apps/src/admin/apps/handlers.rs");
+    let oxy_access = read("crates/api-custom-apps/src/admin/oxy_access.rs");
 
     // #1 — registration takes its org from the body.
     assert!(
@@ -315,7 +315,7 @@ fn the_documented_scope_exceptions_keep_their_checks() {
 /// one autocomplete away, and the failure is silent.
 #[test]
 fn scope_write_paths_use_the_fallible_helper() {
-    let src = read("crates/app/src/server/api/admin/apps/handlers.rs");
+    let src = read("crates/api-custom-apps/src/admin/apps/handlers.rs");
 
     // `deny_out_of_scope` moved to the shared `admin::scope` module when the org and
     // workspace handlers needed it too — a third copy would have been the wrong answer.

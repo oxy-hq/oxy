@@ -93,7 +93,7 @@ retries = 2
 # server rather than for a schema.
 #
 # The grouping is per binary, coarser than the evidence strictly supports —
-# `platform` and `custom_apps` each carry source-scanning tests that never open a
+# `platform` carries source-scanning tests that never open a
 # connection. That is a few tests' worth of parallelism, and it buys a rule that
 # stays true when someone adds a harness-backed test to one of those files.
 #
@@ -112,7 +112,16 @@ retries = 2
 # leaving them in `db-per-test` bounds them against each other and not at all
 # against the `agentic-runtime`/`agentic-pipeline` tests that own those rows.
 [[profile.default.overrides]]
-filter = "kind(test) & package(=oxy-app) & (binary(=custom_apps) | binary(=airhouse) | binary(=platform)) & !test(/^(projects_query|local_mode_router|simulation_router|staging_preview_cookie_retired)::/)"
+filter = "kind(test) & package(=oxy-app) & (binary(=airhouse) | binary(=platform)) & !test(/^(projects_query|local_mode_router|simulation_router)::/)"
+test-group = "db-per-test"
+retries = 2
+
+# `oxy-api-custom-apps`' integration group (the custom-app tests, which were oxy-app's
+# `custom_apps` binary). The coarse rule is kept: the whole binary is `db-per-test`
+# but the two modules that open no database, which keep full parallelism.
+# `staging_preview_cookie_retired` calls `api_router(..)` and is serialized below.
+[[profile.default.overrides]]
+filter = "kind(test) & package(=oxy-api-custom-apps) & binary(=integration) & !test(/^(route_roles|public_routes|staging_preview_cookie_retired)::/)"
 test-group = "db-per-test"
 retries = 2
 
@@ -167,7 +176,7 @@ retries = 2
 # Two routes in:
 #   * nine call `oxy::database::client::establish_connection()` directly;
 #   * `projects_query`, `local_mode_router`, `simulation_router` and
-#     `custom_apps::staging_preview_cookie_retired` call `api_router(..)`, which
+#     `staging_preview_cookie_retired` (now `oxy-api-custom-apps`) call `api_router(..)`, which
 #     reaches it through `new_agentic_state` and then runs `cleanup_stale_runs` —
 #     an unscoped UPDATE over `agentic_runs`. That one is a writer, and the rows
 #     it rewrites belong to the agentic-runtime/pipeline tests.
@@ -184,7 +193,14 @@ retries = 2
 # The real fix is porting these onto `common::fresh_db()`; see
 # `internal-docs/testing.md`. Until then they belong here.
 [[profile.default.overrides]]
-filter = "kind(test) & package(=oxy-app) & (binary(=authz) | binary(=slack) | binary(=platform) | binary(=custom_apps)) & test(/^(authz_loader_differential|org_invitations|admin_membership_audit|audit_append_only|slack_resolution|slack_oauth_state|slack_oauth_install|slack_uninstall|slack_user_links|slack_cross_org_collision|slack_notify_dm|projects_query|local_mode_router|simulation_router|staging_preview_cookie_retired)::/)"
+filter = "kind(test) & package(=oxy-app) & (binary(=authz) | binary(=slack) | binary(=platform)) & test(/^(authz_loader_differential|org_invitations|admin_membership_audit|audit_append_only|slack_resolution|slack_oauth_state|slack_oauth_install|slack_uninstall|slack_user_links|slack_cross_org_collision|slack_notify_dm|projects_query|local_mode_router|simulation_router)::/)"
+test-group = "serial-db"
+retries = 2
+
+# The one module of `oxy-api-custom-apps`' integration binary that builds
+# `api_router(..)` (see the `projects_query` note above).
+[[profile.default.overrides]]
+filter = "kind(test) & package(=oxy-api-custom-apps) & binary(=integration) & test(/^(staging_preview_cookie_retired)::/)"
 test-group = "serial-db"
 retries = 2
 

@@ -36,16 +36,29 @@ use uuid::Uuid;
 use super::{Fixture, call};
 
 /// The flat tree as `oxy-server` serves it: `oxy-app`'s global routes plus the
-/// surfaces its `api` seam merges in and its staff-console sections — the
-/// same crates, in the same order, as `api_seam_routes` in `main.rs`.
+/// surfaces its `api` and `public` seams merge in and its staff-console sections
+/// — the same crates, in the same order, as `api_seam_routes` and
+/// `public_seam_routes` in `main.rs`.
 pub(crate) fn flat_api() -> Router {
     let api_seam = oxy_api_github::routes()
         .merge(oxy_api_tenancy::routes())
-        .merge(oxy_api_tenancy::partner_console::routes())
+        .merge(
+            oxy_api_tenancy::partner_console::routes().layer(axum::Extension(std::sync::Arc::new(
+                oxy_api_custom_apps::app_lifecycle::Lifecycle,
+            )
+                as std::sync::Arc<dyn oxy_app_core::app_lifecycle::AppLifecycle>)),
+        )
         .merge(oxy_api_tenancy::onboarding::routes())
         .merge(oxy_api_documents::routes())
-        .merge(oxy_api_frontline::routes());
-    oxy_app::server::router::flat_api_surface(api_seam, oxy_api_tenancy::admin_sections())
+        .merge(oxy_api_frontline::routes())
+        .merge(oxy_api_custom_apps::routes());
+    let public_seam =
+        oxy_api_frontline::public_routes().merge(oxy_api_custom_apps::public_routes());
+    oxy_app::server::router::flat_api_surface(
+        api_seam,
+        public_seam,
+        oxy_api_tenancy::admin_sections(),
+    )
 }
 
 /// `/read` asks for nothing beyond reaching the workspace; `/write` and

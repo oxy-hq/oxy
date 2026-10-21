@@ -1,15 +1,13 @@
 //! The custom-app work this composition root hands `oxy-app` through
 //! [`SurfaceSeams`](oxy_app::server::router::SurfaceSeams): the five task kinds
-//! the worker fleet runs, the five process-lifetime background jobs, and the
-//! outer `/customer-apps/{*path}` mount.
+//! the worker fleet runs, the process-lifetime background jobs, the outer
+//! `/customer-apps/{*path}` mount, the function runtime for the `oxy-app`
+//! handlers that run a function, and the `oxy migrate` and `oxy seed` halves.
 //!
-//! The outer mount is `oxy-api-custom-apps`'s route; the usage-retention and
-//! usage-drain jobs and the storage sweeps are in `oxy-custom-apps`. The task
-//! executors and the sandbox maintenance job are still in `oxy-app`
-//! (`custom_apps_*`, `app_function_executor`) until the second lift. What moved
-//! here is the decision that a process runs each of them. `oxy-app`'s router and
-//! `serve` no longer name any of it, so when the rest moves into
-//! `oxy-api-custom-apps`, only the `use` paths below change.
+//! The executors, the mount, the runtime and the seed are `oxy-api-custom-apps`'s;
+//! the usage-retention and usage-drain jobs and the storage sweeps are in
+//! `oxy-custom-apps`. What is here is the decision that a process runs each of
+//! them. `oxy-app`'s router and `serve` name none of it.
 //!
 //! `oxy-app` refuses to start (`SurfaceSeams::require_custom_apps`) when a kind
 //! or a job it needs is missing from what this module returns, so dropping an
@@ -19,16 +17,16 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::routing::any;
-use oxy_api_custom_apps::serve as custom_apps_serve;
-use oxy_app::server::api::custom_apps_functions::seam::FunctionQueryExecutor;
-use oxy_app::server::api::custom_apps_nonproduction::{staging_task, staging_task_executor};
-use oxy_app::server::api::custom_apps_sandboxes::{
+use oxy_api_custom_apps::app_function_executor::{APP_FUNCTION_KIND, AppFunctionTaskExecutor};
+use oxy_api_custom_apps::custom_apps_nonproduction::{staging_task, staging_task_executor};
+use oxy_api_custom_apps::custom_apps_sandboxes::{
     maintenance, migrations_task, oltp_task, teardown,
 };
+use oxy_api_custom_apps::serve as custom_apps_serve;
 use oxy_app::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use oxy_app::server::api::projects::query::DataPlaneQueryExecutor;
-use oxy_app::server::app_function_executor::{APP_FUNCTION_KIND, AppFunctionTaskExecutor};
 use oxy_app::server::router::{BackgroundSeam, TaskSeam};
+use oxy_app_core::function_seam::{FunctionQueryExecutor, FunctionRuntime};
 use oxy_custom_apps::storage::{retention, sweeper};
 use oxy_custom_apps::{tracking as custom_apps_tracking, usage_queue as custom_apps_usage_queue};
 use tower::ServiceBuilder;
@@ -48,6 +46,10 @@ pub(crate) fn tasks() -> Vec<TaskSeam> {
                 Arc::new(AppFunctionTaskExecutor {
                     db: deps.db.clone(),
                     preagg: deps.preagg.clone(),
+                    // The worker's own composition root: the shared data-plane
+                    // query executor, as a trait object, so the function module
+                    // never imports `projects::query`.
+                    executor: Arc::new(DataPlaneQueryExecutor) as Arc<dyn FunctionQueryExecutor>,
                 })
             },
         },
@@ -91,6 +93,28 @@ pub(crate) fn tasks() -> Vec<TaskSeam> {
             },
         },
     ]
+}
+
+/// Runs a function request for the `oxy-app` handlers that do on a person's
+/// behalf (a notification's function action).
+pub(crate) fn function_runtime() -> Arc<dyn FunctionRuntime> {
+    Arc::new(oxy_api_custom_apps::function_runtime::Runtime::new(
+        Arc::new(DataPlaneQueryExecutor),
+    ))
+}
+
+/// The staff console's publish and unpublish, for the partner console to call.
+pub(crate) fn app_lifecycle() -> Arc<dyn oxy_app_core::app_lifecycle::AppLifecycle> {
+    Arc::new(oxy_api_custom_apps::app_lifecycle::Lifecycle)
+}
+
+/// What `oxy migrate` prints after the migrations: the functions preflight.
+pub(crate) fn post_migrate() -> oxy_app::server::router::MigrateReport {
+    |build| {
+        Box::pin(oxy_api_custom_apps::custom_apps_functions::preflight::run(
+            build,
+        ))
+    }
 }
 
 /// The jobs a serve process starts once and leaves running for custom apps.
@@ -147,6 +171,43 @@ pub(crate) fn background() -> Vec<BackgroundSeam> {
                 Some(custom_apps_usage_queue::spawn_usage_drain(
                     deps.shutdown.clone(),
                 ))
+            },
+        },
+        // The custom-app log tail's listener rides the task router's connection
+        // settings, for the same reason chat's does. Installed, not started: the
+        // connection opens on this process's first tail, and most processes never
+        // hold one.
+        BackgroundSeam {
+            name: "custom_app_tail_listener",
+            start: |deps| {
+                use oxy_app::surface::listener::{
+                    listener_factory_from_env, listener_tls_verification_from_env,
+                };
+                match (
+                    listener_factory_from_env(),
+                    listener_tls_verification_from_env(),
+                ) {
+                    (Ok(factory), Ok(tls)) => {
+                        oxy_api_custom_apps::custom_apps_tail::listener::install(
+                            factory,
+                            tls,
+                            deps.shutdown.clone(),
+                        )
+                    }
+                    (Err(e), _) | (_, Err(e)) => {
+                        tracing::warn!(error = %e, "custom-app log tail listener not installed")
+                    }
+                }
+                None
+            },
+        },
+        // Resolve the function concurrency ceilings and the isolate heap limit at
+        // boot, so their gauges read the limit and not 0 until a first call.
+        BackgroundSeam {
+            name: "custom_app_function_limits",
+            start: |_| {
+                oxy_api_custom_apps::function_runtime::resolve_limits_at_boot();
+                None
             },
         },
     ]

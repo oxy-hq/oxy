@@ -38,6 +38,7 @@ oxy-api-frontline = { path = "../api-frontline" }
 # default-features off so the `custom-app-functions` feature above is the one switch for V8.
 oxy-api-custom-apps = { path = "../api-custom-apps", default-features = false }
 oxy-custom-apps = { workspace = true }
+oxy-app-core = { workspace = true }
 oxy-route-catalog = { path = "../route-catalog" }
 oxy-api-source-upload = { path = "../api-source-upload" }
 # Dev-dynamic-linking shim, pulled in only by the `dev-dynamic` feature above.
@@ -73,7 +74,6 @@ sentry = { workspace = true, features = ["test"] }
 # every migrator `Schema::All` can apply — the same list as oxy-api-tenancy.
 oxy-auth = { workspace = true }
 oxy-authz = { workspace = true }
-oxy-app-core = { workspace = true }
 oxy-oltp = { workspace = true }
 oxy-billing = { workspace = true }
 oxy-cameras = { workspace = true }

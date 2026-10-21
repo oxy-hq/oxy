@@ -10,10 +10,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::Utc;
 use entity::{app_members, apps, org_frontline_members};
-use oxy_app::server::api::custom_apps_functions::audience::PersonReach;
 use oxy_app::server::api::notifications::catalog::audience::told_by_many;
 use oxy_app::server::api::notifications::catalog::handler::catalog_for;
 use oxy_app::server::api::notifications::preferences::may_be_told_by;
+use oxy_app_core::audience::PersonReach;
 use oxy_auth::types::AuthenticatedUser;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection};
 use uuid::Uuid;

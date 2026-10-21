@@ -11,7 +11,7 @@
 
 use axum::http::StatusCode;
 use entity::org_members::OrgRole;
-use oxy_app::server::api::custom_apps_auth::user_can_access_app;
+use oxy_custom_apps::auth::user_can_access_app;
 use serde_json::json;
 use uuid::Uuid;
 

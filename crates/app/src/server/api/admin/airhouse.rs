@@ -74,7 +74,7 @@ pub async fn list_fleet(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<Json<inner::AirhouseFleet>, StatusCode> {
     let db = conn().await?;
-    let scope = super::scope::scope_org_filter(&db, &user).await;
+    let scope = super::org_filter::scope_org_filter(&db, &user).await;
     inner::list_fleet(&user, scope.as_deref()).await
 }
 

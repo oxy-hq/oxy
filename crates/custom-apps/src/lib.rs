@@ -60,6 +60,7 @@ pub mod gate;
 pub mod github_oidc_keys;
 pub mod manifest;
 pub mod non_production;
+pub mod org_directory;
 pub mod precompress;
 pub mod publish_authz;
 pub mod reach;

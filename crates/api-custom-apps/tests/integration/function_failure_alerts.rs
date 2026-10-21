@@ -1,0 +1,915 @@
+//! A failed custom-app function pages ops once, and only for a failure it has
+//! not had in a week.
+//!
+//! The decision is SQL over the rows finalization writes, and the
+//! at-most-once guarantee is an upsert. Both are properties of the queries
+//! against Postgres, so they are tested there rather than restated in Rust.
+
+use chrono::{DateTime, Duration, Utc};
+use entity::{app_builds, app_function_invocations, apps, organizations, workspaces};
+use oxy_api_custom_apps::custom_apps_functions::failure_alert::{
+    DELIVERY_GRACE_MINUTES, FUNCTION_PAGE_WINDOW_HOURS, FailureKey, LOOKBACK_DAYS, PAGES_PER_HOUR,
+    PERSISTENT_AFTER_HOURS, RETENTION_DAYS, THRESHOLD, Verdict, claim, mark_delivered,
+};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ConnectionTrait, DatabaseBackend, DatabaseConnection,
+    Statement,
+};
+use uuid::Uuid;
+
+use crate::common::test_db;
+
+/// The Issues view reads the rows these tests insert — it shares the seeding.
+mod issues;
+
+const FUNCTION: &str = "upload-report";
+const FINGERPRINT: &str = "5c1e0b8a9d2f4e71";
+
+struct Seeded {
+    app_id: Uuid,
+    build_id: Uuid,
+    /// A production invocation of another function: the finalized invocation
+    /// each `claim` here is asked about. `claim` reads its environment and
+    /// nothing else, so it moves none of the counts these tests assert.
+    invocation: Uuid,
+}
+
+impl Seeded {
+    fn key(&self) -> FailureKey<'static> {
+        self.key_for(FUNCTION, FINGERPRINT)
+    }
+
+    fn key_for(&self, function: &'static str, fingerprint: &'static str) -> FailureKey<'static> {
+        FailureKey {
+            app_id: self.app_id,
+            function_name: function,
+            fingerprint,
+        }
+    }
+}
+
+/// Fingerprints have existed for longer than the lookback: no first-week hold.
+fn long_ago() -> DateTime<Utc> {
+    Utc::now() - Duration::days(30)
+}
+
+fn is_page(verdict: &Verdict) -> bool {
+    matches!(verdict, Verdict::Page { .. })
+}
+
+async fn seed(db: &DatabaseConnection) -> Seeded {
+    let org_id = Uuid::new_v4();
+    organizations::ActiveModel {
+        id: Set(org_id),
+        name: Set("Failure Alerts Org".into()),
+        slug: Set(format!("failure-alerts-{org_id}")),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .expect("seed org");
+    let workspace_id = Uuid::new_v4();
+    workspaces::ActiveModel {
+        id: Set(workspace_id),
+        name: Set("Failure Alerts Workspace".into()),
+        org_id: Set(Some(org_id)),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .expect("seed workspace");
+    let app_id = Uuid::new_v4();
+    apps::ActiveModel {
+        id: Set(app_id),
+        slug: Set(format!("bookkeeping-{app_id}")),
+        name: Set("Bookkeeping".into()),
+        org_id: Set(org_id),
+        project_id: Set(workspace_id),
+        branch: Set("main".into()),
+        source_repo: Set("failure-alerts/test".into()),
+        status: Set("active".into()),
+        source_type: Set("s3".into()),
+        source_config: Set(serde_json::json!({})),
+        published_at: Set(Some(Utc::now().into())),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .expect("seed app");
+    let build_id = Uuid::new_v4();
+    app_builds::ActiveModel {
+        id: Set(build_id),
+        app_id: Set(app_id),
+        build_id: Set("b1".into()),
+        s3_prefix: Set(format!("customer-apps/{app_id}/builds/b1/")),
+        created_at: Set(Utc::now().into()),
+        validation_status: Set("passed".into()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .expect("seed build");
+    let invocation = Uuid::new_v4();
+    app_function_invocations::ActiveModel {
+        id: Set(invocation),
+        app_id: Set(app_id),
+        build_id: Set(build_id),
+        function_name: Set("pager-anchor".into()),
+        mode: Set("route".into()),
+        user_id: Set(None),
+        status: Set("error".into()),
+        duration_ms: Set(Some(1)),
+        error: Set(None),
+        cancel_requested_at: Set(None),
+        created_at: Set(Utc::now().into()),
+        idempotency_key: Set(None),
+        result_body: Set(None),
+        result_status: Set(None),
+        request_hash: Set(None),
+        failure_fingerprint: Set(None),
+        environment: Set("production".into()),
+        credential_token_id: Set(None),
+    }
+    .insert(db)
+    .await
+    .expect("seed the claimed invocation");
+    Seeded {
+        app_id,
+        build_id,
+        invocation,
+    }
+}
+
+/// A failed invocation row, `ago` in the past. `fingerprint: None` is a row
+/// from before fingerprints existed.
+async fn failed_as(
+    db: &DatabaseConnection,
+    s: &Seeded,
+    function: &str,
+    fingerprint: Option<&str>,
+    ago: Duration,
+) {
+    app_function_invocations::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        app_id: Set(s.app_id),
+        build_id: Set(s.build_id),
+        function_name: Set(function.into()),
+        mode: Set("route".into()),
+        user_id: Set(None),
+        status: Set("error".into()),
+        duration_ms: Set(Some(12)),
+        error: Set(Some(
+            "function threw: Error: warehouse insert failed".into(),
+        )),
+        cancel_requested_at: Set(None),
+        created_at: Set((Utc::now() - ago).into()),
+        idempotency_key: Set(None),
+        result_body: Set(None),
+        result_status: Set(None),
+        request_hash: Set(None),
+        failure_fingerprint: Set(fingerprint.map(str::to_string)),
+        environment: Set("production".into()),
+        credential_token_id: Set(None),
+    }
+    .insert(db)
+    .await
+    .expect("seed invocation");
+}
+
+async fn failed(db: &DatabaseConnection, s: &Seeded, ago: Duration) {
+    failed_as(db, s, FUNCTION, Some(FINGERPRINT), ago).await;
+}
+
+/// [`failed`] in another app environment — same function, same fingerprint.
+async fn failed_in(db: &DatabaseConnection, s: &Seeded, environment: &str, ago: Duration) -> Uuid {
+    let id = Uuid::new_v4();
+    app_function_invocations::ActiveModel {
+        id: Set(id),
+        app_id: Set(s.app_id),
+        build_id: Set(s.build_id),
+        function_name: Set(FUNCTION.into()),
+        mode: Set("route".into()),
+        user_id: Set(None),
+        status: Set("error".into()),
+        duration_ms: Set(Some(12)),
+        error: Set(Some(
+            "function threw: Error: warehouse insert failed".into(),
+        )),
+        cancel_requested_at: Set(None),
+        created_at: Set((Utc::now() - ago).into()),
+        idempotency_key: Set(None),
+        result_body: Set(None),
+        result_status: Set(None),
+        request_hash: Set(None),
+        failure_fingerprint: Set(Some(FINGERPRINT.into())),
+        environment: Set(environment.into()),
+        credential_token_id: Set(None),
+    }
+    .insert(db)
+    .await
+    .expect("seed invocation");
+    id
+}
+
+async fn claims(db: &DatabaseConnection) -> i64 {
+    db.query_one_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT count(*) AS n FROM app_function_failure_alerts WHERE function_name = $1",
+        [FUNCTION.into()],
+    ))
+    .await
+    .unwrap()
+    .unwrap()
+    .try_get::<i64>("", "n")
+    .unwrap()
+}
+
+/// Design §3.4: a staging failure shares production's fingerprint, so if it
+/// counted it would not merely page — it would claim the slot and hold back
+/// production's own first-occurrence page. It must do neither.
+#[tokio::test]
+async fn a_failing_staging_function_neither_pages_nor_claims_productions_slot() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+
+    for _ in 0..THRESHOLD {
+        failed_in(&db, &s, "staging", Duration::minutes(3)).await;
+    }
+    let verdict = claim(&db, s.invocation, s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert_eq!(
+        verdict,
+        Verdict::Quiet,
+        "staging's failures are not production's history"
+    );
+    assert_eq!(claims(&db).await, 0, "nothing claimed the page slot");
+
+    // Production now breaks the same way: its first occurrence pages, as if
+    // staging had never failed.
+    for _ in 0..THRESHOLD {
+        failed(&db, &s, Duration::minutes(1)).await;
+    }
+    let page = claim(&db, s.invocation, s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert!(
+        is_page(&page),
+        "production's page is not held back by staging: {page:?}"
+    );
+}
+
+/// The second guard: asked about a staging invocation, `claim` claims nothing
+/// even when production's own history is due a page. It reads the
+/// invocation's environment from its row rather than trusting the caller, so
+/// a regression in `failure_page::observe` alone still pages nobody.
+#[tokio::test]
+async fn claim_refuses_a_staging_invocation_even_when_production_is_due() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    for _ in 0..THRESHOLD {
+        failed(&db, &s, Duration::minutes(2)).await;
+    }
+    let staging = failed_in(&db, &s, "staging", Duration::minutes(1)).await;
+
+    let verdict = claim(&db, staging, s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert_eq!(verdict, Verdict::Quiet, "a staging invocation never claims");
+    let unknown = claim(&db, Uuid::new_v4(), s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert_eq!(
+        unknown,
+        Verdict::Quiet,
+        "an invocation with no row is not production"
+    );
+    assert_eq!(claims(&db).await, 0, "nothing claimed the page slot");
+
+    let page = claim(&db, s.invocation, s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert!(
+        is_page(&page),
+        "production's own invocation pages: {page:?}"
+    );
+}
+
+/// A finished call, `ago` in the past. `fingerprint: Some` is a `success` the
+/// pager still counted as a failure — it answered 5xx, or caught a failed
+/// `ctx.*` call — which is exactly what must not read as the function working.
+async fn succeeded(db: &DatabaseConnection, s: &Seeded, ago: Duration, fingerprint: Option<&str>) {
+    app_function_invocations::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        app_id: Set(s.app_id),
+        build_id: Set(s.build_id),
+        function_name: Set(FUNCTION.into()),
+        mode: Set("route".into()),
+        user_id: Set(None),
+        status: Set("success".into()),
+        duration_ms: Set(Some(12)),
+        error: Set(None),
+        cancel_requested_at: Set(None),
+        created_at: Set((Utc::now() - ago).into()),
+        idempotency_key: Set(None),
+        result_body: Set(None),
+        result_status: Set(None),
+        request_hash: Set(None),
+        failure_fingerprint: Set(fingerprint.map(str::to_string)),
+        environment: Set("production".into()),
+        credential_token_id: Set(None),
+    }
+    .insert(db)
+    .await
+    .expect("seed success");
+}
+
+fn persistent_page(verdict: &Verdict) -> bool {
+    matches!(
+        verdict,
+        Verdict::Page {
+            persistent: true,
+            ..
+        }
+    )
+}
+
+/// An alerts row written directly — history the test needs without replaying it.
+async fn alert_row(
+    db: &DatabaseConnection,
+    key: FailureKey<'_>,
+    claimed_ago: Duration,
+    outcome: &str,
+) {
+    let at = (Utc::now() - claimed_ago).fixed_offset();
+    db.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "INSERT INTO app_function_failure_alerts \
+           (app_id, function_name, failure_fingerprint, claimed_at, delivered_at, outcome) \
+         VALUES ($1, $2, $3, $4, $4, $5)",
+        [
+            key.app_id.into(),
+            key.function_name.into(),
+            key.fingerprint.into(),
+            at.into(),
+            outcome.into(),
+        ],
+    ))
+    .await
+    .expect("seed alert row");
+}
+
+#[tokio::test]
+async fn a_new_failure_pages_at_the_threshold_and_then_not_again() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+
+    for _ in 1..THRESHOLD {
+        failed(&db, &s, Duration::minutes(2)).await;
+    }
+    let under = claim(&db, s.invocation, s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert_eq!(under, Verdict::Quiet, "a failure under the threshold waits");
+
+    failed(&db, &s, Duration::minutes(1)).await;
+    let page = claim(&db, s.invocation, s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert!(
+        is_page(&page),
+        "the occurrence that reaches the threshold pages: {page:?}"
+    );
+
+    // A second replica finalizing the same failure moments later.
+    let again = claim(&db, s.invocation, s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert_eq!(
+        again,
+        Verdict::Quiet,
+        "one page per failure, not per replica"
+    );
+
+    mark_delivered(&db, s.key(), Utc::now()).await.unwrap();
+    failed(&db, &s, Duration::zero()).await;
+    let later = Utc::now() + Duration::minutes(DELIVERY_GRACE_MINUTES + 1);
+    let after_delivery = claim(&db, s.invocation, s.key(), later, long_ago())
+        .await
+        .unwrap();
+    assert_eq!(
+        after_delivery,
+        Verdict::Quiet,
+        "a delivered page is not resent"
+    );
+}
+
+#[tokio::test]
+async fn a_failure_the_function_already_had_this_week_does_not_page() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+
+    failed(&db, &s, Duration::days(3)).await;
+    for _ in 0..THRESHOLD {
+        failed(&db, &s, Duration::minutes(1)).await;
+    }
+    let known = claim(&db, s.invocation, s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert_eq!(
+        known,
+        Verdict::Quiet,
+        "this failure is the function's, not new"
+    );
+}
+
+#[tokio::test]
+async fn another_function_or_fingerprint_is_a_separate_signal() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    for _ in 0..THRESHOLD {
+        failed(&db, &s, Duration::minutes(1)).await;
+    }
+    let now = Utc::now();
+
+    let other_function = s.key_for("submit-receiving-report", FINGERPRINT);
+    assert_eq!(
+        claim(&db, s.invocation, other_function, now, long_ago())
+            .await
+            .unwrap(),
+        Verdict::Quiet
+    );
+    let other_fingerprint = s.key_for(FUNCTION, "0000000000000000");
+    assert_eq!(
+        claim(&db, s.invocation, other_fingerprint, now, long_ago())
+            .await
+            .unwrap(),
+        Verdict::Quiet
+    );
+    assert!(is_page(
+        &claim(&db, s.invocation, s.key(), now, long_ago())
+            .await
+            .unwrap()
+    ));
+}
+
+#[tokio::test]
+async fn a_page_nobody_sent_goes_stale_and_is_claimed_again() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    for _ in 0..THRESHOLD {
+        failed(&db, &s, Duration::minutes(1)).await;
+    }
+    let now = Utc::now();
+    assert!(is_page(
+        &claim(&db, s.invocation, s.key(), now, long_ago())
+            .await
+            .unwrap()
+    ));
+
+    let within_grace = now + Duration::minutes(DELIVERY_GRACE_MINUTES - 1);
+    let still_claimed = claim(&db, s.invocation, s.key(), within_grace, long_ago())
+        .await
+        .unwrap();
+    assert_eq!(
+        still_claimed,
+        Verdict::Quiet,
+        "the claimant may still be sending"
+    );
+
+    // The replica that claimed it died before posting.
+    let past_grace = now + Duration::minutes(DELIVERY_GRACE_MINUTES + 1);
+    let retaken = claim(&db, s.invocation, s.key(), past_grace, long_ago())
+        .await
+        .unwrap();
+    assert!(
+        is_page(&retaken),
+        "an undelivered page is retried: {retaken:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_failure_that_comes_back_after_a_quiet_week_pages_again() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    // Paged eight days ago; the failure then stopped.
+    failed(&db, &s, Duration::days(8)).await;
+    alert_row(&db, s.key(), Duration::days(8), "paged").await;
+
+    for _ in 0..THRESHOLD {
+        failed(&db, &s, Duration::minutes(1)).await;
+    }
+    let verdict = claim(&db, s.invocation, s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert!(is_page(&verdict), "a week-old page re-arms: {verdict:?}");
+}
+
+#[tokio::test]
+async fn failures_from_before_fingerprints_hold_the_first_week_quiet() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    let fingerprints_since = Utc::now() - Duration::hours(1);
+    // A chronic failure, recorded before fingerprints existed.
+    failed_as(&db, &s, FUNCTION, None, Duration::days(2)).await;
+    for _ in 0..THRESHOLD {
+        failed(&db, &s, Duration::minutes(1)).await;
+    }
+
+    let verdict = claim(&db, s.invocation, s.key(), Utc::now(), fingerprints_since)
+        .await
+        .unwrap();
+    assert_eq!(
+        verdict,
+        Verdict::Suppressed("suppressed:unfingerprinted_history")
+    );
+    failed(&db, &s, Duration::zero()).await;
+    let next = claim(&db, s.invocation, s.key(), Utc::now(), fingerprints_since)
+        .await
+        .unwrap();
+    assert_eq!(next, Verdict::Quiet, "held back once, then recorded");
+
+    // A function with no failures before fingerprints still pages that week.
+    for _ in 0..THRESHOLD {
+        failed_as(
+            &db,
+            &s,
+            "submit-receiving-report",
+            Some(FINGERPRINT),
+            Duration::minutes(1),
+        )
+        .await;
+    }
+    let clean = s.key_for("submit-receiving-report", FINGERPRINT);
+    assert!(is_page(
+        &claim(&db, s.invocation, clean, Utc::now(), fingerprints_since)
+            .await
+            .unwrap()
+    ));
+}
+
+#[tokio::test]
+async fn a_chronic_5xx_from_before_fingerprints_is_held_too() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    let fingerprints_since = Utc::now() - Duration::hours(1);
+    // A scheduled run that answered 500 before fingerprints existed: a
+    // `success` with its status stored.
+    app_function_invocations::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        app_id: Set(s.app_id),
+        build_id: Set(s.build_id),
+        function_name: Set(FUNCTION.into()),
+        mode: Set("schedule".into()),
+        user_id: Set(None),
+        status: Set("success".into()),
+        duration_ms: Set(Some(12)),
+        error: Set(None),
+        cancel_requested_at: Set(None),
+        created_at: Set((Utc::now() - Duration::days(2)).into()),
+        idempotency_key: Set(None),
+        result_body: Set(Some("{}".into())),
+        result_status: Set(Some(500)),
+        request_hash: Set(None),
+        failure_fingerprint: Set(None),
+        environment: Set("production".into()),
+        credential_token_id: Set(None),
+    }
+    .insert(&db)
+    .await
+    .expect("seed 5xx invocation");
+    for _ in 0..THRESHOLD {
+        failed(&db, &s, Duration::minutes(1)).await;
+    }
+    let verdict = claim(&db, s.invocation, s.key(), Utc::now(), fingerprints_since)
+        .await
+        .unwrap();
+    assert_eq!(
+        verdict,
+        Verdict::Suppressed("suppressed:unfingerprinted_history")
+    );
+}
+
+#[tokio::test]
+async fn a_function_pages_at_most_once_per_window() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    alert_row(
+        &db,
+        s.key_for(FUNCTION, "aaaaaaaaaaaaaaaa"),
+        Duration::hours(1),
+        "paged",
+    )
+    .await;
+    for _ in 0..THRESHOLD {
+        failed(&db, &s, Duration::minutes(1)).await;
+    }
+    let now = Utc::now();
+    let verdict = claim(&db, s.invocation, s.key(), now, long_ago())
+        .await
+        .unwrap();
+    assert_eq!(verdict, Verdict::Suppressed("suppressed:function_rate"));
+
+    let within_window = now + Duration::hours(FUNCTION_PAGE_WINDOW_HOURS - 1);
+    let held = claim(&db, s.invocation, s.key(), within_window, long_ago())
+        .await
+        .unwrap();
+    assert_eq!(held, Verdict::Quiet, "the hold stands for its window");
+}
+
+#[tokio::test]
+async fn a_rate_held_failure_pages_once_its_window_passes_however_late() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    alert_row(
+        &db,
+        s.key_for(FUNCTION, "aaaaaaaaaaaaaaaa"),
+        Duration::hours(1),
+        "paged",
+    )
+    .await;
+    for _ in 0..THRESHOLD {
+        failed(&db, &s, Duration::minutes(1)).await;
+    }
+    let now = Utc::now();
+    assert_eq!(
+        claim(&db, s.invocation, s.key(), now, long_ago())
+            .await
+            .unwrap(),
+        Verdict::Suppressed("suppressed:function_rate")
+    );
+
+    // Still failing well past the window — and past the day in which it counted
+    // as new. A failure held back for being one too many must not be silenced
+    // for arriving late.
+    failed(&db, &s, Duration::zero()).await;
+    let day_and_a_half_later = now + Duration::hours(36);
+    let verdict = claim(&db, s.invocation, s.key(), day_and_a_half_later, long_ago())
+        .await
+        .unwrap();
+    assert!(
+        matches!(
+            verdict,
+            Verdict::Page {
+                persistent: false,
+                ..
+            }
+        ),
+        "the held failure pages, as the {THRESHOLD}+ calls it was: {verdict:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_rate_held_low_traffic_break_still_says_it_is_one_when_it_goes_out() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    alert_row(
+        &db,
+        s.key_for(FUNCTION, "aaaaaaaaaaaaaaaa"),
+        Duration::hours(1),
+        "paged",
+    )
+    .await;
+    succeeded(&db, &s, Duration::days(3), None).await;
+    failed(&db, &s, Duration::hours(30)).await;
+    failed(&db, &s, Duration::minutes(1)).await;
+    let now = Utc::now();
+    assert_eq!(
+        claim(&db, s.invocation, s.key(), now, long_ago())
+            .await
+            .unwrap(),
+        Verdict::Suppressed("suppressed:function_rate")
+    );
+
+    // Two failures, not three: the page must not say "3+" when the hold lifts.
+    let past_window = now + Duration::hours(FUNCTION_PAGE_WINDOW_HOURS + 1);
+    let verdict = claim(&db, s.invocation, s.key(), past_window, long_ago())
+        .await
+        .unwrap();
+    assert!(persistent_page(&verdict), "{verdict:?}");
+}
+
+#[tokio::test]
+async fn a_rate_held_low_traffic_break_that_recovered_stays_quiet() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    alert_row(
+        &db,
+        s.key_for(FUNCTION, "aaaaaaaaaaaaaaaa"),
+        Duration::hours(1),
+        "paged",
+    )
+    .await;
+    succeeded(&db, &s, Duration::days(3), None).await;
+    failed(&db, &s, Duration::hours(30)).await;
+    failed(&db, &s, Duration::minutes(1)).await;
+    let now = Utc::now();
+    assert_eq!(
+        claim(&db, s.invocation, s.key(), now, long_ago())
+            .await
+            .unwrap(),
+        Verdict::Suppressed("suppressed:function_rate")
+    );
+
+    // It answered during the hold: "no success in between" is no longer true.
+    succeeded(&db, &s, Duration::zero(), None).await;
+    let past_window = now + Duration::hours(FUNCTION_PAGE_WINDOW_HOURS + 1);
+    assert_eq!(
+        claim(&db, s.invocation, s.key(), past_window, long_ago())
+            .await
+            .unwrap(),
+        Verdict::Quiet
+    );
+}
+
+#[tokio::test]
+async fn the_platform_pages_at_most_so_many_times_an_hour() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    const OTHERS: [&str; 10] = ["f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9"];
+    assert_eq!(OTHERS.len() as i64, PAGES_PER_HOUR);
+    for other in OTHERS {
+        alert_row(
+            &db,
+            s.key_for(other, FINGERPRINT),
+            Duration::minutes(10),
+            "paged",
+        )
+        .await;
+    }
+    for _ in 0..THRESHOLD {
+        failed(&db, &s, Duration::minutes(1)).await;
+    }
+    let now = Utc::now();
+    let verdict = claim(&db, s.invocation, s.key(), now, long_ago())
+        .await
+        .unwrap();
+    assert_eq!(verdict, Verdict::Suppressed("suppressed:platform_rate"));
+
+    let within_hour = now + Duration::minutes(30);
+    assert_eq!(
+        claim(&db, s.invocation, s.key(), within_hour, long_ago())
+            .await
+            .unwrap(),
+        Verdict::Quiet,
+        "the hold stands for its hour"
+    );
+    // The other pages were ten minutes old at `now`; an hour on, they no
+    // longer count, and the held failure goes out.
+    let past_hour = now + Duration::minutes(61);
+    let verdict = claim(&db, s.invocation, s.key(), past_hour, long_ago())
+        .await
+        .unwrap();
+    assert!(is_page(&verdict), "the held failure pages: {verdict:?}");
+}
+
+#[tokio::test]
+async fn a_page_prunes_alert_rows_past_retention() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    let ancient = s.key_for("retired-function", FINGERPRINT);
+    alert_row(&db, ancient, Duration::days(RETENTION_DAYS + 1), "paged").await;
+    for _ in 0..THRESHOLD {
+        failed(&db, &s, Duration::minutes(1)).await;
+    }
+
+    assert!(is_page(
+        &claim(&db, s.invocation, s.key(), Utc::now(), long_ago())
+            .await
+            .unwrap()
+    ));
+    let left = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT count(*) AS n FROM app_function_failure_alerts WHERE function_name = $1",
+            ["retired-function".into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<i64>("", "n")
+        .unwrap();
+    assert_eq!(left, 0, "a row past retention is gone after the next page");
+}
+
+// ── The persistent route: a function that worked, broke, and stayed broken ──
+//
+// The shape of `warehouse/submit-receiving` in the Sep 2026 incident: it worked
+// until a release, then every call failed for days, but calls were rare, so
+// the fast route's three-in-a-day happened late or never. Each test below
+// satisfies every condition but the one it is named for, so it cannot pass for
+// the wrong reason.
+
+#[tokio::test]
+async fn a_low_traffic_break_pages_on_the_persistent_route() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    succeeded(&db, &s, Duration::days(3), None).await; // it worked
+    failed(&db, &s, Duration::hours(30)).await;
+    failed(&db, &s, Duration::minutes(1)).await;
+
+    let verdict = claim(&db, s.invocation, s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert!(
+        persistent_page(&verdict),
+        "worked, then two failures a day apart and no success since: {verdict:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_function_that_never_answered_is_having_its_own_failure() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    // Everything else holds; there is simply no success on record before it.
+    failed(&db, &s, Duration::hours(30)).await;
+    failed(&db, &s, Duration::minutes(1)).await;
+
+    let verdict = claim(&db, s.invocation, s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert_eq!(
+        verdict,
+        Verdict::Quiet,
+        "with no evidence it ever worked, this is the function's failure, not a break"
+    );
+}
+
+#[tokio::test]
+async fn a_success_in_between_keeps_a_flaky_failure_quiet() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    succeeded(&db, &s, Duration::days(3), None).await;
+    failed(&db, &s, Duration::hours(30)).await;
+    succeeded(&db, &s, Duration::hours(10), None).await;
+    failed(&db, &s, Duration::minutes(1)).await;
+
+    let verdict = claim(&db, s.invocation, s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert_eq!(
+        verdict,
+        Verdict::Quiet,
+        "the function answered in between, so this is flaky, not broken"
+    );
+}
+
+#[tokio::test]
+async fn a_success_that_caught_a_failure_is_not_the_function_working() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    succeeded(&db, &s, Duration::days(3), None).await;
+    failed(&db, &s, Duration::hours(30)).await;
+    // A call that returned 2xx but caught a failed `ctx.*` call: fingerprinted,
+    // so the pager counted it. The warehouse app looked exactly like this.
+    succeeded(&db, &s, Duration::hours(10), Some("0f0f0f0f0f0f0f0f")).await;
+    failed(&db, &s, Duration::minutes(1)).await;
+
+    let verdict = claim(&db, s.invocation, s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert!(
+        persistent_page(&verdict),
+        "a success the pager counted as a failure must not clear the break: {verdict:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_failure_the_function_had_the_week_before_is_not_a_new_break() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    succeeded(&db, &s, Duration::days(LOOKBACK_DAYS + 1), None).await;
+    // Just outside the lookback, so the first in-window occurrence is the one
+    // 30h ago — but inside the week before that, which is what "new" checks.
+    failed(&db, &s, Duration::days(LOOKBACK_DAYS) + Duration::hours(2)).await;
+    failed(&db, &s, Duration::hours(30)).await;
+    failed(&db, &s, Duration::minutes(1)).await;
+
+    let verdict = claim(&db, s.invocation, s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert_eq!(
+        verdict,
+        Verdict::Quiet,
+        "a failure the function already had the week before is not a new break"
+    );
+}
+
+#[tokio::test]
+async fn a_fresh_pair_waits_out_the_persistent_window() {
+    let db = test_db().await;
+    let s = seed(&db).await;
+    succeeded(&db, &s, Duration::days(3), None).await;
+    failed(&db, &s, Duration::hours(PERSISTENT_AFTER_HOURS - 1)).await;
+    failed(&db, &s, Duration::minutes(1)).await;
+
+    let verdict = claim(&db, s.invocation, s.key(), Utc::now(), long_ago())
+        .await
+        .unwrap();
+    assert_eq!(
+        verdict,
+        Verdict::Quiet,
+        "under {PERSISTENT_AFTER_HOURS}h, two failures are the fast route's to judge, and it \
+         needs {THRESHOLD}"
+    );
+}

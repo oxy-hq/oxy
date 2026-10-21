@@ -18,8 +18,8 @@ use entity::org_members::{self, OrgRole};
 use entity::{
     app_builds, apps, partner_capabilities, partner_grants, partner_orgs, partner_role_bindings,
 };
-use oxy_app::server::api::custom_apps_environments::{EnvAction, fixed_pointers, record_move};
 use oxy_app_core::custom_app_environment::AppEnvironment;
+use oxy_custom_apps::environments::{EnvAction, fixed_pointers, record_move};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait};
 use serde_json::{Value, json};
 use uuid::Uuid;

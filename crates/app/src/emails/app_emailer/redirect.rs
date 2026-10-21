@@ -66,8 +66,7 @@ impl EmailSendInput {
     }
 
     /// Everyone the message would reach — `to`, `cc` and `bcc`.
-    #[cfg(test)]
-    pub(crate) fn recipients(&self) -> Vec<String> {
+    pub fn recipients(&self) -> Vec<String> {
         let own = |f: &Option<OneOrMany>| match f {
             Some(OneOrMany::One(one)) => vec![one.clone()],
             Some(OneOrMany::Many(many)) => many.clone(),

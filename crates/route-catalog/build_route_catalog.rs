@@ -231,15 +231,30 @@ const SEEDS: &[Seed] = &[
         module: "oxy_api_frontline",
         function: "public_routes",
     },
-    // `oxy-api-custom-apps` fills `SurfaceSeams::public` too: the health, logs and
-    // client-error reads authenticate inline, so they sit beside the public tree.
-    // (Its `/customer-apps/{*path}` route rides `SurfaceSeams::outer`, beside
-    // `/api`, and is not a catalog route.)
+    // `oxy-api-custom-apps` fills three seams. `SurfaceSeams::public`: the health,
+    // logs and client-error reads, the OIDC exchange, the app webhooks and the
+    // bundle SDK's reads authenticate inline (or by an HMAC), so they sit beside
+    // the public tree. `SurfaceSeams::api`: the staff console at `/customer-apps`,
+    // `/apps/mine` and `/me/apps`. `SurfaceSeams::workspace`: the workspace's own
+    // `/custom-apps`. (Its `/customer-apps/{*path}` route rides
+    // `SurfaceSeams::outer`, beside `/api`, and is not a catalog route.)
     Seed {
         surface: "public",
         prefix: "/api",
         module: "oxy_api_custom_apps",
         function: "public_routes",
+    },
+    Seed {
+        surface: "org",
+        prefix: "/api",
+        module: "oxy_api_custom_apps",
+        function: "routes",
+    },
+    Seed {
+        surface: "workspace",
+        prefix: "/api/{workspace_id}",
+        module: "oxy_api_custom_apps",
+        function: "workspace_routes",
     },
     // `oxy-api-tenancy` (its onboarding module) also fills the `SurfaceSeams::workspace` seam, which lands
     // inside the `/{workspace_id}` tree rather than beside it — two mount
