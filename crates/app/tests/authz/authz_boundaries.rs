@@ -128,11 +128,6 @@ const ALLOWED: &[(&str, &str)] = &[
          — the needle matches the set {Owner, Admin}, not the question being asked of it",
     ),
     (
-        "custom-apps/src/publish_authz.rs",
-        "a named decision module of shape actor x state -> reason, not principal-action-resource; \
-         it must explain *why* it denied, which a ring cannot express",
-    ),
-    (
         "app/src/server/api/workspace_members.rs",
         "role-*transition* invariants (actor x target x new role). `target.role >= caller.role` is \
          NOT `authorize_target_modification`: for Owner-on-Owner the former denies and the latter \
@@ -179,14 +174,56 @@ fn rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// The `crates/` root. `CARGO_MANIFEST_DIR` is `crates/app`.
+fn crates_root() -> &'static Path {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates/app has a parent")
+}
+
+/// `path` relative to the `crates/` root, `/`-separated — the form `ALLOWED` is written in.
+fn rel_of(path: &Path) -> String {
+    path.strip_prefix(crates_root())
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+/// Does this file contain any banned shape?
+fn holds_a_banned_shape(path: &Path) -> bool {
+    fs::read_to_string(path).is_ok_and(|text| BANNED.iter().any(|b| text.contains(b.needle)))
+}
+
+/// An entry nothing under it still needs is not backlog, it is an open door: the file
+/// keeps its exemption for whatever is written there next, and the list stops saying
+/// what is left to migrate. So every entry must still cover a file that holds a banned
+/// shape, and one that does not is removed in the change that made it unnecessary.
+#[test]
+fn every_allowlist_entry_still_covers_a_banned_shape() {
+    let mut files = Vec::new();
+    rust_sources(crates_root(), &mut files);
+    let stale: Vec<&str> = ALLOWED
+        .iter()
+        .map(|(allowed, _)| *allowed)
+        .filter(|allowed| {
+            !files
+                .iter()
+                .any(|f| rel_of(f).starts_with(allowed) && holds_a_banned_shape(f))
+        })
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "ALLOWED names {} entr(ies) that no longer contain any banned shape: {stale:?}. \
+         Remove them — an exemption nothing needs is one the next shortcut inherits.",
+        stale.len()
+    );
+}
+
 #[test]
 fn authorization_does_not_scatter_outside_the_allowlist() {
     // Workspace-wide (not just oxy-app): authz enforcement is being pulled into sibling crates
     // (a future `oxy-server-authz`), and a banned decision must be caught wherever it lands.
-    // `CARGO_MANIFEST_DIR` is `crates/app`; its parent is the `crates/` root.
-    let crates_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("crates/app has a parent");
+    let crates_root = crates_root();
     let mut files = Vec::new();
     rust_sources(crates_root, &mut files);
     // 500 is a floor, not a target: it only has to stay below the real count (~1450
@@ -201,12 +238,6 @@ fn authorization_does_not_scatter_outside_the_allowlist() {
     // Prove the walk actually widened beyond oxy-app: if it silently collapsed back to one
     // crate, extracted authz code would leave the test's reach unnoticed — the exact failure
     // this widening exists to prevent.
-    let rel_of = |p: &Path| {
-        p.strip_prefix(crates_root)
-            .unwrap()
-            .to_string_lossy()
-            .replace('\\', "/")
-    };
     assert!(
         files.iter().any(|f| rel_of(f).starts_with("app/src/")),
         "walk did not cover oxy-app"

@@ -1,8 +1,9 @@
 //! `/api/admin/users/*` — the cross-tenant user directory.
 //!
-//! Surfaces every user in the database, regardless of org, so operators can search by
-//! email, inspect their org memberships, and run targeted actions (deactivate, change
-//! role, remove from org).
+//! Surfaces users across orgs so operators can search by email, inspect their org
+//! memberships, and run targeted actions (deactivate, change role, remove from org).
+//! An unbounded grant and the Global Owner see every user; a grant bounded to some
+//! orgs sees their members, and only those orgs' rows of them (`admin::user_scope`).
 //!
 //! **Gated by `cap(Action::PlatformUsers)`, not OXY_OWNER** — the doc said owner-only
 //! long after that stopped being true, which mattered here more than most: this is the
@@ -39,7 +40,7 @@ use uuid::Uuid;
 
 use serde_json::json;
 
-use crate::server::api::admin::scope;
+use crate::server::api::admin::{scope, user_scope};
 use crate::server::router::AppState;
 use oxy_app_core::audit;
 use sea_orm::ExprTrait;
@@ -206,11 +207,20 @@ pub struct UpdateRoleBody {
     pub role: String,
 }
 
+/// `GET /admin/users` — the directory.
+///
+/// **Narrowed by the caller's grant, in the query**, ahead of the paging: a bounded
+/// grant lists the members of the orgs it reaches, so pages are full and `rel="next"`
+/// is exact, and each row's org-owned summary (count, top role, partners) counts only
+/// those orgs. A user in no org is listed to an unbounded grant and the Global Owner
+/// only (`user_scope`).
 pub async fn list_users(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     OriginalUri(uri): OriginalUri,
     Query(q): Query<ListUsersQuery>,
 ) -> Result<Paged<AdminUserRow>, StatusCode> {
     let db = establish_connection().await.map_err(internal)?;
+    let reach = user_scope::user_scope(&db, &actor).await?;
     let page = q.page.unwrap_or(0);
     // CLAMPED AT BOTH ENDS. `?page_size=0` past a top-only clamp is an infinite
     // pagination loop, not an empty page: the offset stays 0 on every page while
@@ -223,6 +233,9 @@ pub async fn list_users(
     let page_size = Ord::clamp(q.page_size.unwrap_or(50), 1, 200);
 
     let mut query = users::Entity::find().order_by_desc(users::Column::LastLoginAt);
+    if let Some(orgs) = reach.as_deref() {
+        query = query.filter(users::Column::Id.in_subquery(members_of(orgs)));
+    }
 
     if let Some(needle) = q.search.as_ref().filter(|s| !s.trim().is_empty()) {
         let like = format!("%{}%", needle.trim());
@@ -296,17 +309,18 @@ pub async fn list_users(
         .iter()
         .filter_map(|u| u.email.as_deref().map(str::to_ascii_lowercase))
         .collect();
-    let org_counts = count_user_org_memberships_in(&db, &user_ids)
+    let reach = reach.as_deref();
+    let org_counts = count_user_org_memberships_in(&db, &user_ids, reach)
         .await
         .map_err(internal)?;
     let grant_map = lookup_platform_grants_in(&db, &emails_lower)
         .await
         .map_err(internal)?;
     // Two more IN (...) lookups — still O(1) per page, no N+1.
-    let partner_map = lookup_partner_admins_in(&db, &user_ids)
+    let partner_map = lookup_partner_admins_in(&db, &user_ids, reach)
         .await
         .map_err(internal)?;
-    let role_map = lookup_top_org_role_in(&db, &user_ids)
+    let role_map = lookup_top_org_role_in(&db, &user_ids, reach)
         .await
         .map_err(internal)?;
     let service_accounts = service_accounts_in(&db, &user_ids)
@@ -367,19 +381,32 @@ struct EmailRow {
     email: String,
 }
 
+/// `SELECT user_id FROM org_members WHERE org_id IN (orgs)` — the users a grant bounded
+/// to `orgs` may list. An empty `orgs` matches no one.
+fn members_of(orgs: &[Uuid]) -> sea_orm::sea_query::SelectStatement {
+    sea_orm::sea_query::Query::select()
+        .column(org_members::Column::UserId)
+        .from(org_members::Entity)
+        .and_where(org_members::Column::OrgId.is_in(orgs.to_vec()))
+        .to_owned()
+}
+
+/// Memberships per user, counting only the orgs in `reach` (`None` = all).
 async fn count_user_org_memberships_in(
     db: &sea_orm::DatabaseConnection,
     user_ids: &[Uuid],
+    reach: Option<&[Uuid]>,
 ) -> Result<HashMap<Uuid, i64>, sea_orm::DbErr> {
     if user_ids.is_empty() {
         return Ok(HashMap::new());
     }
     let placeholders = sql_placeholders(user_ids.len());
+    let mut values: Vec<sea_orm::Value> = user_ids.iter().map(|id| (*id).into()).collect();
+    let scoped = scope::org_scope_clause("org_id", reach, &mut values);
     let sql = format!(
         "SELECT user_id, COUNT(*)::bigint AS cnt FROM org_members \
-         WHERE user_id IN ({placeholders}) GROUP BY user_id"
+         WHERE user_id IN ({placeholders}){scoped} GROUP BY user_id"
     );
-    let values: Vec<sea_orm::Value> = user_ids.iter().map(|id| (*id).into()).collect();
     let rows = UserIdCountRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         sql,
@@ -477,7 +504,13 @@ fn sql_placeholders(n: usize) -> String {
         .join(", ")
 }
 
+/// `GET /admin/users/{id}` — one person, as the caller's grant reaches them.
+///
+/// A bounded grant sees a user who is a member of at least one org it reaches, and of
+/// them only what those orgs own: memberships, workspace memberships, invitations and
+/// the partners they operate. Anyone else is the 404 a missing user gets (`user_scope`).
 pub async fn get_user_detail(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     Path(user_id): Path<Uuid>,
 ) -> Result<Json<AdminUserDetail>, StatusCode> {
     let db = establish_connection().await.map_err(internal)?;
@@ -486,39 +519,39 @@ pub async fn get_user_detail(
         .await
         .map_err(internal)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    let reach =
+        user_scope::deny_user_out_of_scope(&db, &actor, user.id, user_scope::reaches_one_of)
+            .await?;
+    let detail = load_user_detail(&db, user, reach.as_deref())
+        .await
+        .map_err(internal)?;
+    Ok(Json(detail))
+}
 
+/// The detail pane for `user`, its org-owned rows narrowed to `reach` (`None` = all).
+async fn load_user_detail(
+    db: &sea_orm::DatabaseConnection,
+    user: users::Model,
+    reach: Option<&[Uuid]>,
+) -> Result<AdminUserDetail, sea_orm::DbErr> {
+    // `user.email`, never a display label: platform standing is keyed by address, and a
+    // label falls back to the (non-unique) `name`, which would let a user be reported
+    // as staff by being named after one.
+    let address = user.email.as_deref().unwrap_or_default();
     let is_app_admin = app_admins::Entity::find()
-        // `user.email`, never a display label: platform standing is keyed by
-        // address, and a label falls back to the (non-unique) `name`, which
-        // would let a user be reported as staff by being named after one.
-        .filter(
-            app_admins::Column::Email.eq(user
-                .email
-                .as_deref()
-                .unwrap_or_default()
-                .to_ascii_lowercase()),
-        )
-        .count(&db)
-        .await
-        .map_err(internal)?
+        .filter(app_admins::Column::Email.eq(address.to_ascii_lowercase()))
+        .count(db)
+        .await?
         > 0;
-
-    let org_memberships = load_user_org_memberships(&db, user.id)
-        .await
-        .map_err(internal)?;
-    let workspace_memberships = load_user_workspace_memberships(&db, user.id)
-        .await
-        .map_err(internal)?;
-    let invitations = load_user_invitations(&db, user.email.as_deref().unwrap_or(""))
-        .await
-        .map_err(internal)?;
-    let partners = lookup_partner_admins_in(&db, &[user.id])
-        .await
-        .map_err(internal)?
+    let org_memberships = load_user_org_memberships(db, user.id, reach).await?;
+    let workspace_memberships = load_user_workspace_memberships(db, user.id, reach).await?;
+    let invitations = load_user_invitations(db, address, reach).await?;
+    let partners = lookup_partner_admins_in(db, &[user.id], reach)
+        .await?
         .remove(&user.id)
         .unwrap_or_default();
 
-    Ok(Json(AdminUserDetail {
+    Ok(AdminUserDetail {
         id: user.id,
         email: user.label().to_string(),
         name: user.name,
@@ -532,44 +565,111 @@ pub async fn get_user_detail(
         workspace_memberships,
         invitations,
         partners,
-    }))
+    })
 }
 
+/// `GET /admin/users/{id}/org-memberships` — narrowed exactly as [`get_user_detail`].
 pub async fn list_org_memberships(
+    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
     Path(user_id): Path<Uuid>,
 ) -> Result<Json<Vec<UserOrgMembership>>, StatusCode> {
     let db = establish_connection().await.map_err(internal)?;
-    let memberships = load_user_org_memberships(&db, user_id)
+    let reach =
+        user_scope::deny_user_out_of_scope(&db, &actor, user_id, user_scope::reaches_one_of)
+            .await?;
+    let memberships = load_user_org_memberships(&db, user_id, reach.as_deref())
         .await
         .map_err(internal)?;
     Ok(Json(memberships))
 }
 
+/// `PATCH /admin/users/{id}/status` — suspend (`deleted`) or reactivate a person.
+///
+/// Status is platform-wide: `deleted` refuses them on every protected route and at every
+/// login, in every org they belong to. So a bounded grant needs **every** one of those
+/// orgs in reach (404 otherwise, as for a missing user), root is never locked out, and a
+/// staff target is behind their grant's delegation bound — the fence that stops a Global
+/// Admin demoting a peer, which this route used to walk around (`user_scope`).
+///
+/// **Audited** in the same transaction as the change, like the membership writes below.
 pub async fn set_user_status(
-    AuthenticatedUserExtractor(actor): AuthenticatedUserExtractor,
+    actor: oxy_app_core::audit::RequestActor,
     Path(user_id): Path<Uuid>,
     Json(body): Json<SetStatusBody>,
-) -> Result<StatusCode, StatusCode> {
-    let new_status =
-        UserStatus::from_str(body.status.as_str()).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let db = establish_connection().await.map_err(internal)?;
+) -> Result<StatusCode, Response> {
+    let new_status = UserStatus::from_str(body.status.as_str())
+        .map_err(|_| StatusCode::BAD_REQUEST.into_response())?;
+    let db = establish_connection().await.map_err(internal_resp)?;
     let user = users::Entity::find_by_id(user_id)
         .one(&db)
         .await
-        .map_err(internal)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(internal_resp)?
+        .ok_or_else(|| StatusCode::NOT_FOUND.into_response())?;
+    let decision = user_scope::StatusDecision::load(&db, &actor).await?;
+    decision.decide(&db, &user, &new_status).await?;
+    write_user_status(&db, &actor, &decision, user_id, new_status).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
 
+/// The status write and its audit rows, in one transaction. The row is re-read under
+/// `FOR UPDATE`, and the change decided again on that transaction: the first decision
+/// read memberships and the target's grant before the lock, and either may have changed
+/// since. `before` describes the row this write replaced.
+async fn write_user_status(
+    db: &sea_orm::DatabaseConnection,
+    actor: &oxy_app_core::audit::RequestActor,
+    decision: &user_scope::StatusDecision,
+    user_id: Uuid,
+    new_status: UserStatus,
+) -> Result<(), Response> {
+    let tx = db.begin().await.map_err(internal_resp)?;
+    let user = users::Entity::find_by_id(user_id)
+        .lock_exclusive()
+        .one(&tx)
+        .await
+        .map_err(internal_resp)?
+        .ok_or_else(|| StatusCode::NOT_FOUND.into_response())?;
+    let orgs = decision.decide(&tx, &user, &new_status).await?;
+    audit_status_change(&tx, actor, &user, &new_status, &orgs)
+        .await
+        .map_err(internal_resp)?;
     let mut active: users::ActiveModel = user.into();
     active.status = Set(new_status);
-    active.update(&db).await.map_err(internal)?;
-    tracing::info!(
-        admin_email = %actor.label(),
-        target_id = %user_id,
-        new_status = %body.status,
-        action = "set_user_status",
-        "admin tenant action"
-    );
-    Ok(StatusCode::NO_CONTENT)
+    active.update(&tx).await.map_err(internal_resp)?;
+    tx.commit().await.map_err(internal_resp)
+}
+
+/// The `user.status.updated` rows for `user` going to `to`: one per org they are in
+/// (`orgs`), since the change takes effect in each. So each org's trail records it, and
+/// a bounded grant finds its own action in its org-scoped audit view. The rows share a
+/// `metadata.event_id`, as a token's lifecycle rows do, and none names another org. A
+/// person in no org gets one row with no org.
+async fn audit_status_change(
+    tx: &sea_orm::DatabaseTransaction,
+    actor: &oxy_app_core::audit::RequestActor,
+    user: &users::Model,
+    to: &UserStatus,
+    orgs: &[Uuid],
+) -> Result<(), sea_orm::DbErr> {
+    let event_id = Uuid::new_v4();
+    let row_orgs: Vec<Option<Uuid>> = match orgs {
+        [] => vec![None],
+        orgs => orgs.iter().copied().map(Some).collect(),
+    };
+    for org in row_orgs {
+        let mut entry = audit::AuditEntry::for_request(actor, "user.status.updated")
+            .target("user", user.id.to_string(), user.label().to_string())
+            .change(
+                json!({ "status": user.status.as_str() }),
+                json!({ "status": to.as_str() }),
+            )
+            .metadata(json!({ "surface": "admin", "event_id": event_id }));
+        if let Some(org) = org {
+            entry = entry.org(org);
+        }
+        audit::record_in_txn(tx, entry).await?;
+    }
+    Ok(())
 }
 
 /// `POST /admin/users/{id}/org-memberships` — put someone in an org, at a role.
@@ -588,70 +688,114 @@ pub async fn add_to_org(
     actor: oxy_app_core::audit::RequestActor,
     Path(user_id): Path<Uuid>,
     Json(body): Json<AddToOrgBody>,
-) -> Result<StatusCode, StatusCode> {
-    let role = OrgRole::from_str(body.role.as_str()).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let db = establish_connection().await.map_err(internal)?;
+) -> Result<StatusCode, Response> {
+    let role = OrgRole::from_str(body.role.as_str())
+        .map_err(|_| StatusCode::BAD_REQUEST.into_response())?;
+    let db = establish_connection().await.map_err(internal_resp)?;
 
     let target = users::Entity::find_by_id(user_id)
         .one(&db)
         .await
-        .map_err(internal)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(internal_resp)?
+        .ok_or_else(|| StatusCode::NOT_FOUND.into_response())?;
     let org = organizations::Entity::find_by_id(body.org_id)
         .one(&db)
         .await
-        .map_err(internal)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .map_err(internal_resp)?
+        .ok_or_else(|| StatusCode::NOT_FOUND.into_response())?;
 
-    // **Scope.** A bounded grant must not reach outside its orgs — without this a
-    // global_admin scoped to one tenant could POST {org_id: <any>, role: "owner"} and
-    // hold permanent Owner in a tenant its grant never covered, which is a strictly
-    // worse escalation than anything the console's read paths could leak.
+    // **Scope, on both ends.** The org: without this a global_admin scoped to one tenant
+    // could POST {org_id: <any>, role: "owner"} and hold permanent Owner in a tenant its
+    // grant never covered. The person: without that, a grant could add a user in no org
+    // to one of its own and so make them its to suspend.
     //
     // 404, matching every other out-of-scope answer in this change: an operator with no
     // reach into an org must not learn it exists by being told "forbidden".
-    scope::deny_out_of_scope(&db, &actor, body.org_id).await?;
+    scope::deny_out_of_scope(&db, &actor, body.org_id)
+        .await
+        .map_err(IntoResponse::into_response)?;
+    user_scope::deny_addition_out_of_scope(&db, &actor, &target)
+        .await
+        .map_err(IntoResponse::into_response)?;
+    refuse_service_account(&db, user_id).await?;
 
-    let tx = db.begin().await.map_err(internal)?;
+    insert_membership(&db, &actor, &target, &org, role).await
+}
+
+/// A service account's standing is its `service_accounts` row. It is never an org
+/// member (`oxy_auth::token::service_account`): membership is what seats, member lists,
+/// app audiences and teams count. So no caller may add one. A bounded grant never gets
+/// this far, since such an account is in no org it reaches.
+async fn refuse_service_account(
+    db: &sea_orm::DatabaseConnection,
+    user_id: Uuid,
+) -> Result<(), Response> {
+    if service_accounts_in(db, &[user_id])
+        .await
+        .map_err(internal_resp)?
+        .is_empty()
+    {
+        return Ok(());
+    }
+    Err(error_body(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "service_account",
+        Some(
+            "A service account is never an org member: its standing in its org is set \
+             on the account itself."
+                .to_string(),
+        ),
+    ))
+}
+
+/// The membership row and its `member.added` audit row, in one transaction.
+async fn insert_membership(
+    db: &sea_orm::DatabaseConnection,
+    actor: &oxy_app_core::audit::RequestActor,
+    target: &users::Model,
+    org: &organizations::Model,
+    role: OrgRole,
+) -> Result<StatusCode, Response> {
+    let tx = db.begin().await.map_err(internal_resp)?;
 
     // Existence check inside the transaction: outside it, two concurrent adds both see
     // "absent" and the second dies on the unique index with a 500 instead of a 409.
     let existing = org_members::Entity::find()
-        .filter(org_members::Column::OrgId.eq(body.org_id))
-        .filter(org_members::Column::UserId.eq(user_id))
+        .filter(org_members::Column::OrgId.eq(org.id))
+        .filter(org_members::Column::UserId.eq(target.id))
         .one(&tx)
         .await
-        .map_err(internal)?;
+        .map_err(internal_resp)?;
     if existing.is_some() {
-        return Err(StatusCode::CONFLICT);
+        return Err(StatusCode::CONFLICT.into_response());
     }
 
     let now = Utc::now().fixed_offset();
     let role_str = role.as_str().to_string();
     let model = org_members::ActiveModel {
         id: ActiveValue::Set(Uuid::new_v4()),
-        org_id: Set(body.org_id),
-        user_id: Set(user_id),
+        org_id: Set(org.id),
+        user_id: Set(target.id),
         role: Set(role),
         created_at: Set(now),
         updated_at: Set(now),
     };
-    model.insert(&tx).await.map_err(internal)?;
+    model.insert(&tx).await.map_err(internal_resp)?;
 
     audit::record_in_txn(
         &tx,
-        audit::AuditEntry::for_request(&actor, "member.added")
-            .org(body.org_id)
-            .target("user", user_id.to_string(), target.label().to_string())
+        audit::AuditEntry::for_request(actor, "member.added")
+            .org(org.id)
+            .target("user", target.id.to_string(), target.label().to_string())
             // `before: null` reads as "held nothing here" — the fact that makes this row
             // meaningful, since it distinguishes a grant from a role change.
             .change(serde_json::Value::Null, json!({ "role": role_str }))
             .metadata(json!({ "org_slug": org.slug, "surface": "admin" })),
     )
     .await
-    .map_err(internal)?;
+    .map_err(internal_resp)?;
 
-    tx.commit().await.map_err(internal)?;
+    tx.commit().await.map_err(internal_resp)?;
     // A role that can make the caller an app admin changed: drop the no-role memo.
     crate::server::api::custom_apps_auth::invalidate_access_cache();
     Ok(StatusCode::CREATED)
@@ -855,11 +999,16 @@ pub async fn remove_from_org(
 async fn load_user_invitations(
     db: &sea_orm::DatabaseConnection,
     email: &str,
+    reach: Option<&[Uuid]>,
 ) -> Result<Vec<UserInvitation>, sea_orm::DbErr> {
     let now = Utc::now().fixed_offset();
-    let invitations = org_invitations::Entity::find()
+    let mut query = org_invitations::Entity::find()
         .filter(org_invitations::Column::Email.eq(email.to_ascii_lowercase()))
-        .filter(org_invitations::Column::Status.eq(InviteStatus::Pending))
+        .filter(org_invitations::Column::Status.eq(InviteStatus::Pending));
+    if let Some(orgs) = reach {
+        query = query.filter(org_invitations::Column::OrgId.is_in(orgs.to_vec()));
+    }
+    let invitations = query
         .order_by_desc(org_invitations::Column::CreatedAt)
         .all(db)
         .await?;
@@ -965,9 +1114,13 @@ where
 async fn load_user_org_memberships(
     db: &sea_orm::DatabaseConnection,
     user_id: Uuid,
+    reach: Option<&[Uuid]>,
 ) -> Result<Vec<UserOrgMembership>, sea_orm::DbErr> {
-    let rows = org_members::Entity::find()
-        .filter(org_members::Column::UserId.eq(user_id))
+    let mut query = org_members::Entity::find().filter(org_members::Column::UserId.eq(user_id));
+    if let Some(orgs) = reach {
+        query = query.filter(org_members::Column::OrgId.is_in(orgs.to_vec()));
+    }
+    let rows = query
         .order_by_asc(org_members::Column::CreatedAt)
         .all(db)
         .await?;
@@ -1000,6 +1153,7 @@ async fn load_user_org_memberships(
 async fn load_user_workspace_memberships(
     db: &sea_orm::DatabaseConnection,
     user_id: Uuid,
+    reach: Option<&[Uuid]>,
 ) -> Result<Vec<UserWorkspaceMembership>, sea_orm::DbErr> {
     let rows = workspace_members::Entity::find()
         .filter(workspace_members::Column::UserId.eq(user_id))
@@ -1020,7 +1174,11 @@ async fn load_user_workspace_memberships(
 
     let mut out = Vec::with_capacity(rows.len());
     for m in rows {
-        if let Some(ws) = workspaces_by_id.get(&m.workspace_id) {
+        // A workspace is its org's row; an org-less one is platform-level.
+        if let Some(ws) = workspaces_by_id
+            .get(&m.workspace_id)
+            .filter(|ws| user_scope::row_in_scope(reach, ws.org_id))
+        {
             out.push(UserWorkspaceMembership {
                 workspace_id: ws.id,
                 workspace_name: ws.name.clone(),
@@ -1204,23 +1362,27 @@ struct PartnerAdminRow {
 /// The chain is: the user is an `org_members` row in an org that holds a
 /// `partner_grant`, AND that membership carries a `partner_role_binding`. A member
 /// of Acme with no binding is just an Acme employee, so they correctly get nothing.
+///
+/// A partner is an org, so `reach` narrows it like any org-owned row (`None` = all).
 async fn lookup_partner_admins_in(
     db: &sea_orm::DatabaseConnection,
     user_ids: &[Uuid],
+    reach: Option<&[Uuid]>,
 ) -> Result<HashMap<Uuid, Vec<UserPartnerRef>>, sea_orm::DbErr> {
     if user_ids.is_empty() {
         return Ok(HashMap::new());
     }
     let placeholders = sql_placeholders(user_ids.len());
+    let mut values: Vec<sea_orm::Value> = user_ids.iter().map(|id| (*id).into()).collect();
+    let scoped = scope::org_scope_clause("om.org_id", reach, &mut values);
     let sql = format!(
         "SELECT om.user_id, o.id AS partner_id, o.name AS partner_name \
          FROM org_members om \
          JOIN partner_role_bindings prb ON prb.org_member_id = om.id \
          JOIN partner_grants pg ON pg.org_id = om.org_id \
          JOIN organizations o ON o.id = om.org_id \
-         WHERE om.user_id IN ({placeholders}) AND pg.status = 'active'"
+         WHERE om.user_id IN ({placeholders}) AND pg.status = 'active'{scoped}"
     );
-    let values: Vec<sea_orm::Value> = user_ids.iter().map(|id| (*id).into()).collect();
     let rows = PartnerAdminRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         sql,
@@ -1247,21 +1409,24 @@ struct TopRoleRow {
 
 /// Each user's HIGHEST org role (owner > admin > member) — the tenant hierarchy
 /// the directory was missing. Ordered in SQL so one query answers it for a page.
+/// Only the orgs in `reach` count (`None` = all).
 async fn lookup_top_org_role_in(
     db: &sea_orm::DatabaseConnection,
     user_ids: &[Uuid],
+    reach: Option<&[Uuid]>,
 ) -> Result<HashMap<Uuid, String>, sea_orm::DbErr> {
     if user_ids.is_empty() {
         return Ok(HashMap::new());
     }
     let placeholders = sql_placeholders(user_ids.len());
+    let mut values: Vec<sea_orm::Value> = user_ids.iter().map(|id| (*id).into()).collect();
+    let scoped = scope::org_scope_clause("org_id", reach, &mut values);
     let sql = format!(
         "SELECT DISTINCT ON (user_id) user_id, role FROM org_members \
-         WHERE user_id IN ({placeholders}) \
+         WHERE user_id IN ({placeholders}){scoped} \
          ORDER BY user_id, CASE role \
            WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END"
     );
-    let values: Vec<sea_orm::Value> = user_ids.iter().map(|id| (*id).into()).collect();
     let rows = TopRoleRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         sql,

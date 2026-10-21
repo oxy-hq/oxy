@@ -34,6 +34,7 @@ pub mod sandbox_agent_tokens;
 pub mod scope;
 pub mod standing_tokens;
 pub mod usage_report;
+mod user_scope;
 pub mod users_admin;
 // `pub(crate)`: the module stays internal and only what a caller outside this crate
 // needs is re-exported below, matching the narrower `admin::apps` pattern (export the

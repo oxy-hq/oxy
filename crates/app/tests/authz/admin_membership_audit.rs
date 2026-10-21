@@ -18,7 +18,7 @@
 use axum::Json;
 use axum::extract::Path;
 use entity::org_members::OrgRole;
-use entity::{audit_events, org_members, organizations, users};
+use entity::{app_admins, audit_events, org_members, organizations, users};
 use oxy::database::client::establish_connection;
 use oxy_app::server::api::admin::users_admin::{
     AddToOrgBody, UpdateRoleBody, add_to_org, remove_from_org, update_role,
@@ -52,6 +52,26 @@ async fn seed_user(conn: &DatabaseConnection, tag: &str) -> users::Model {
     .insert(conn)
     .await
     .expect("seed user")
+}
+
+/// A Global Admin with an all-orgs grant: the caller these routes are gated to
+/// (`manage_members`). A user with no standing never reaches them, and the user fences
+/// refuse one, as a listing does.
+async fn seed_staff(conn: &DatabaseConnection) -> users::Model {
+    let staff = seed_user(conn, "staff").await;
+    app_admins::ActiveModel {
+        id: ActiveValue::Set(Uuid::new_v4()),
+        email: ActiveValue::Set(staff.email.clone().unwrap_or_default()),
+        granted_by: ActiveValue::Set(None),
+        created_at: ActiveValue::NotSet,
+        role: ActiveValue::Set("global_admin".to_string()),
+        scope_all: ActiveValue::Set(true),
+        updated_at: ActiveValue::NotSet,
+    }
+    .insert(conn)
+    .await
+    .expect("seed staff grant");
+    staff
 }
 
 async fn seed_org(conn: &DatabaseConnection) -> organizations::Model {
@@ -102,7 +122,7 @@ async fn staff_membership_changes_are_audited_end_to_end() {
     }
     let conn = establish_connection().await.expect("db connect");
 
-    let staff = seed_user(&conn, "staff").await;
+    let staff = seed_staff(&conn).await;
     let target = seed_user(&conn, "target").await;
     let org = seed_org(&conn).await;
     // A second owner, so the last-owner guard doesn't block the demote/remove below.
@@ -209,7 +229,7 @@ async fn a_refused_membership_change_writes_no_audit_row() {
     }
     let conn = establish_connection().await.expect("db connect");
 
-    let staff = seed_user(&conn, "staff").await;
+    let staff = seed_staff(&conn).await;
     let only_owner = seed_user(&conn, "solo").await;
     let org = seed_org(&conn).await;
 

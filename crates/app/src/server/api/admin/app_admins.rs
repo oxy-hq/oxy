@@ -85,7 +85,7 @@ fn stored_standing(
 ///
 /// For everyone else an unnameable role is undelegatable: it cannot be ranked, and
 /// guessing a rank for it is how a rollback turns into an escalation.
-fn delegatable(
+pub(super) fn delegatable(
     facts: &PrincipalFacts,
     role: &str,
     scope_all: bool,
@@ -96,6 +96,52 @@ fn delegatable(
         None if facts.is_global_owner => Ok(()),
         None => Err(DelegationDenial::RoleNotBelow),
     }
+}
+
+/// A grant row as stored, role unexpanded — what [`delegatable`] decides on.
+pub(super) struct StoredGrant {
+    pub role: String,
+    pub scope_all: bool,
+    pub scope_org_ids: Vec<Uuid>,
+}
+
+/// The grant stored for `email`, if any, for a write that acts on a **person** who holds
+/// standing rather than on their grant row (`users_admin::set_user_status`).
+///
+/// Read raw rather than through `globals::grant_of_email`, which drops a role this build
+/// cannot name: here that would read as "not staff" and skip the bound, where
+/// [`delegatable`] keeps such a row the owner's alone.
+pub(super) async fn stored_grant_of<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    email: &str,
+) -> Result<Option<StoredGrant>, sea_orm::DbErr> {
+    let key = email.trim().to_ascii_lowercase();
+    if key.is_empty() {
+        return Ok(None);
+    }
+    let Some(row) = AppAdmins::find()
+        .filter(app_admins::Column::Email.eq(key))
+        .one(db)
+        .await?
+    else {
+        return Ok(None);
+    };
+    let scope_org_ids = if row.scope_all {
+        Vec::new()
+    } else {
+        app_admin_scope_orgs::Entity::find()
+            .filter(app_admin_scope_orgs::Column::AppAdminId.eq(row.id))
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|r| r.org_id)
+            .collect()
+    };
+    Ok(Some(StoredGrant {
+        role: row.role,
+        scope_all: row.scope_all,
+        scope_org_ids,
+    }))
 }
 
 pub(crate) fn router() -> Router<AppState> {

@@ -343,6 +343,61 @@ async fn a_non_member_cannot_open_another_orgs_app() {
     );
 }
 
+/// The legacy `/customer-apps/<uuid>/` form 301s to the app's pretty URL, which names
+/// its org and slug. A caller who may not open the app gets what a uuid nobody
+/// registered gets, so the redirect cannot be used to learn either.
+#[tokio::test]
+async fn a_legacy_uuid_url_names_an_app_only_to_a_caller_who_may_open_it() {
+    let db = test_db().await;
+    seed::seed_demo(Some(examples_path())).await.expect("seed");
+    add_guest_to_org(&db, org_id(&db, "local").await).await;
+    let mine = app_id(&db, "local").await;
+    let theirs = app_id(&db, "acme").await;
+
+    let (status, location) = get_redirect(&format!("/customer-apps/{mine}/")).await;
+    assert_eq!(status, StatusCode::MOVED_PERMANENTLY);
+    assert!(
+        location.ends_with(&format!("/customer-apps/local/{APP_SLUG}/")),
+        "redirected to {location}"
+    );
+
+    let (unknown, _) = get_redirect(&format!("/customer-apps/{}/", Uuid::new_v4())).await;
+    assert_eq!(unknown, StatusCode::NOT_FOUND);
+    let (status, location) = get_redirect(&format!("/customer-apps/{theirs}/")).await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "a non-member was redirected to {location}"
+    );
+    assert_eq!(location, "", "the refusal names where the app lives");
+}
+
+async fn app_id(db: &DatabaseConnection, org_slug: &str) -> Uuid {
+    let org = org_id(db, org_slug).await;
+    Apps::find()
+        .filter(apps::Column::OrgId.eq(org))
+        .filter(apps::Column::Slug.eq(APP_SLUG))
+        .one(db)
+        .await
+        .expect("query app")
+        .unwrap_or_else(|| panic!("{org_slug} has the example app"))
+        .id
+}
+
+async fn get_redirect(uri: &str) -> (StatusCode, String) {
+    let resp = router()
+        .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+        .await
+        .expect("oneshot");
+    let location = resp
+        .headers()
+        .get(axum::http::header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    (resp.status(), location)
+}
+
 /// An org's home page lists the app the seed deployed into it.
 ///
 /// The chain has four links and every one of them has silently broken at least

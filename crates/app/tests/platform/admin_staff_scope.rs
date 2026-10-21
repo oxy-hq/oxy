@@ -36,3 +36,7 @@ mod directories;
 mod fences;
 mod fixture;
 mod internal_jobs;
+mod user_add_to_org;
+mod user_detail;
+mod user_directory;
+mod user_status;

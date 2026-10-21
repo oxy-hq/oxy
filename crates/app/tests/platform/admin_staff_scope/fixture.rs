@@ -4,12 +4,14 @@
 use axum::body::to_bytes;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use chrono::Utc;
+use entity::org_members::OrgRole;
 use entity::users::UserStatus;
 use entity::workspaces::WorkspaceStatus;
-use entity::{app_admin_scope_orgs, app_admins, organizations, users, workspaces};
+use entity::{app_admin_scope_orgs, app_admins, org_members, organizations, users, workspaces};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_auth::types::AuthenticatedUser;
-use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection};
+use sea_orm::{ActiveModelTrait, ActiveValue, ConnectionTrait, DatabaseConnection};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -167,14 +169,19 @@ pub async fn seed_user(db: &DatabaseConnection, email: &str) -> AuthenticatedUse
 
 /// A `global_admin` grant row: `orgs = None` is `scope_all`, `Some(..)` is bounded
 /// to exactly those orgs (an empty list reaches nothing).
-pub async fn grant(db: &DatabaseConnection, email: &str, orgs: Option<&[Uuid]>) {
+pub async fn grant<C: ConnectionTrait>(db: &C, email: &str, orgs: Option<&[Uuid]>) {
+    grant_as(db, email, "global_admin", orgs).await;
+}
+
+/// [`grant`] at a named platform role (`global_admin` | `app_operator`).
+pub async fn grant_as<C: ConnectionTrait>(db: &C, email: &str, role: &str, orgs: Option<&[Uuid]>) {
     let id = Uuid::new_v4();
     app_admins::ActiveModel {
         id: ActiveValue::Set(id),
         email: ActiveValue::Set(email.to_ascii_lowercase()),
         granted_by: ActiveValue::Set(None),
         created_at: ActiveValue::NotSet,
-        role: ActiveValue::Set("global_admin".to_string()),
+        role: ActiveValue::Set(role.to_string()),
         scope_all: ActiveValue::Set(orgs.is_none()),
         updated_at: ActiveValue::NotSet,
     }
@@ -193,6 +200,23 @@ pub async fn grant(db: &DatabaseConnection, email: &str, orgs: Option<&[Uuid]>) 
         .await
         .expect("seed grant scope");
     }
+}
+
+/// Make `user` a member of `org` at `role`; answers the membership's id.
+pub async fn member_of<C: ConnectionTrait>(db: &C, user: Uuid, org: Uuid, role: OrgRole) -> Uuid {
+    let id = Uuid::new_v4();
+    org_members::ActiveModel {
+        id: ActiveValue::Set(id),
+        org_id: ActiveValue::Set(org),
+        user_id: ActiveValue::Set(user),
+        role: ActiveValue::Set(role),
+        created_at: ActiveValue::Set(Utc::now().fixed_offset()),
+        updated_at: ActiveValue::Set(Utc::now().fixed_offset()),
+    }
+    .insert(db)
+    .await
+    .expect("seed org membership");
+    id
 }
 
 /// A database of its own with the process pointed at it, two tenants, an org-less

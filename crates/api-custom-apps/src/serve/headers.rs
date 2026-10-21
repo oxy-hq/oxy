@@ -142,6 +142,9 @@ pub(super) fn redirect_to_login(headers: &HeaderMap, uri: &Uri) -> Redirect {
 /// `<base>/customer-apps/<org_slug>/<app_slug>/<rest>`. Looks up the row
 /// before redirecting — fakes get a clean 404 so we don't leak the uuid
 /// namespace to unauth'd probes via 301 vs 404 distinction.
+///
+/// The 301 names the app's org and slug, so it is also only for a caller who
+/// may open the app: anyone else gets the same 404 a fake uuid gets.
 pub(super) async fn redirect_legacy_uuid(
     uuid: Uuid,
     rest: &str,
@@ -150,20 +153,21 @@ pub(super) async fn redirect_legacy_uuid(
 ) -> Response {
     // Auth gate first — same reason as the pretty path. Probing with a uuid
     // shouldn't reveal whether it's registered.
-    let identity = match BuiltInAuthenticator::new(oxy_auth::token::SandboxAgent::Refuse)
-        .authenticate(headers)
-        .await
-    {
-        Ok(i) => i,
-        Err(_) => return redirect_to_login(headers, uri).into_response(),
-    };
-    if UserService::find_user_by_identity(&identity)
+    let (identity, credential) =
+        match BuiltInAuthenticator::new(oxy_auth::token::SandboxAgent::Refuse)
+            .authenticate_with_credential(headers)
+            .await
+        {
+            Ok(authenticated) => authenticated,
+            Err(_) => return redirect_to_login(headers, uri).into_response(),
+        };
+    let Some(user) = UserService::find_user_by_identity(&identity)
         .await
         .unwrap_or(None)
-        .is_none()
-    {
+    else {
         return redirect_to_login(headers, uri).into_response();
-    }
+    };
+    let caller = oxy_server_authz::Caller::from_user(&user.with_credential(credential));
 
     let db = match establish_connection().await {
         Ok(db) => db,
@@ -182,6 +186,9 @@ pub(super) async fn redirect_legacy_uuid(
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
+    if !may_learn_where(&db, &caller, &app).await {
+        return no_store_404();
+    }
     let org = match entity::prelude::Organizations::find_by_id(app.org_id)
         .one(&db)
         .await
@@ -225,6 +232,27 @@ pub(super) async fn redirect_legacy_uuid(
         ],
     )
         .into_response()
+}
+
+/// May the uuid redirect name `app`'s org and slug to `caller`? The production
+/// access check the pretty URL applies next — no wider: an app this caller cannot
+/// open must be indistinguishable from a uuid nobody registered. A failed check
+/// denies.
+async fn may_learn_where(
+    db: &sea_orm::DatabaseConnection,
+    caller: &oxy_server_authz::Caller,
+    app: &entity::apps::Model,
+) -> bool {
+    match oxy_custom_apps::auth::user_can_access_app(db, caller, app).await {
+        Ok(allowed) => allowed,
+        Err(e) => {
+            tracing::error!(
+                "Access check failed during uuid redirect for {}: {e}",
+                app.id
+            );
+            false
+        }
+    }
 }
 
 /// Whether the client wants HTML (the SPA fallback is scoped to top-level
