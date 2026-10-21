@@ -160,11 +160,11 @@ fn relative_to_src(path: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// `CARGO_MANIFEST_DIR` is `crates/app`; its parent is the `crates/` root.
+/// `CARGO_MANIFEST_DIR` is `crates/api-custom-apps`; its parent is the `crates/` root.
 fn crates_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("crates/app has a parent")
+        .expect("crates/api-custom-apps has a parent")
         .to_path_buf()
 }
 

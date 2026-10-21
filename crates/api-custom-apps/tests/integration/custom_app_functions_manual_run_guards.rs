@@ -174,7 +174,7 @@ fn the_admin_app_mount_wears_the_one_stack_the_manual_run_tests_call() {
     let admin = code("crates/app/src/server/api/admin/mod.rs");
     assert!(
         !fn_body(&admin, "router").contains("apps::router()"),
-        "`admin::router()` registers the app handlers again; they are mounted once, in `router::global`"
+        "`admin::router()` registers the app handlers again; they are mounted once, in this crate's `routes()`"
     );
 }
 
