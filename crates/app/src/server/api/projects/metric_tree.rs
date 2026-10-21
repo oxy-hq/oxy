@@ -603,20 +603,7 @@ pub async fn post_baseline(
         Ok(v) => v,
         Err(resp) => return resp,
     };
-    // Now that the read runs one query per view, a warehouse failure need not
-    // reach the outcome at all: one view answering makes it `Valued` while
-    // another errored. Both have to suppress the cache, or a transient failure
-    // on one view gets remembered as that view having no values.
-    let failure = match &reads.outcome {
-        oxy_airlayer_compat::engine::metric_tree_ops::BaselineOutcome::ExecutorError(e) => {
-            Some(e.clone())
-        }
-        _ => reads
-            .skipped
-            .iter()
-            .find(|s| s.kind == mt::SkipKind::QueryFailed)
-            .map(|s| format!("`{}`: {}", s.view, s.reason)),
-    };
+    let failure = mt::baseline_failure(&reads);
 
     // Ask the engine WHY rather than inferring it from an empty map — an
     // executor error and an empty window need opposite fixes.

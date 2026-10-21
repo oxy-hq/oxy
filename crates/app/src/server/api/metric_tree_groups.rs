@@ -55,7 +55,7 @@ use oxy_airlayer_compat::engine::metric_tree_ops::{BaselineOutcome, QueryExecuto
 use oxy_airlayer_compat::engine::query::{FilterOperator, QueryFilter, QueryRequest};
 use oxy_airlayer_compat::schema::models::AggregateSpace;
 
-use super::metric_tree_baseline::forward_reachable;
+use super::metric_tree_inputs::{ExprInput, baseline_inputs};
 
 type Row = serde_json::Map<String, serde_json::Value>;
 
@@ -108,6 +108,11 @@ pub(crate) struct GroupedValues {
     pub values: HashMap<String, f64>,
     pub outcome: BaselineOutcome,
     pub skipped: Vec<SkippedGroup>,
+    /// Expression-only reads (see [`baseline_inputs`]) the executor refused.
+    /// No note speaks for them — the composite above going unvalued already
+    /// does — but a read missing an input it could have had must not be
+    /// remembered as complete, so the caching caller checks this.
+    pub input_errors: Vec<String>,
 }
 
 /// The time dimension to read `view` over, given the one the request named.
@@ -342,12 +347,20 @@ fn measure_value(row: &Row, alias: &str) -> Option<f64> {
     }
 }
 
-/// Current value of every forward-reachable node, one request per view.
+/// Current value of every input a baseline reads, one request per view.
 ///
-/// Mirrors `reachable_values_outcome`'s contract — same reachable set, same
-/// aliasing, same [`BaselineOutcome`] vocabulary — but issues one request per
-/// view instead of one for the tree. These are independent scalars over one
-/// window: nothing about the question needs them to meet in a row.
+/// Mirrors `reachable_values_outcome_in`'s contract — same input set (see
+/// [`baseline_inputs`]), same aliasing, same [`BaselineOutcome`] vocabulary —
+/// but issues one request per view instead of one for the tree. These are
+/// independent scalars over one window: nothing about the question needs them
+/// to meet in a row.
+///
+/// A view's expression-only inputs go in a second request of their own, as in
+/// airlayer, so a ref the engine cannot answer leaves only itself unvalued.
+/// They are filed under the view the expression names, whose window and scope
+/// they are read over, and they stay out of the outcome and the skip list:
+/// both speak about tree nodes, and an unread input already shows up as the
+/// composite above it going unvalued.
 pub(crate) fn grouped_values(
     tree: &MetricTree,
     layer: &SemanticLayer,
@@ -357,41 +370,87 @@ pub(crate) fn grouped_values(
     scope: &[QueryFilter],
     executor: &QueryExecutor,
 ) -> GroupedValues {
-    let wanted = forward_reachable(tree, roots);
-    let mut by_view: BTreeMap<&str, Vec<String>> = BTreeMap::new();
-    for id in &wanted {
-        by_view.entry(view_of(id)).or_default().push(id.clone());
+    let inputs = baseline_inputs(tree, layer, roots);
+    let mut by_view: BTreeMap<&str, (Vec<String>, Vec<&ExprInput>)> = BTreeMap::new();
+    for id in &inputs.nodes {
+        by_view.entry(view_of(id)).or_default().0.push(id.clone());
+    }
+    for input in &inputs.extras {
+        by_view
+            .entry(view_of(&input.requested))
+            .or_default()
+            .1
+            .push(input);
     }
 
-    let mut values = HashMap::new();
-    let mut skipped = Vec::new();
-    let mut errors: Vec<String> = Vec::new();
-    let mut ran = 0usize;
-    let mut any_rows = false;
-
-    for (view, nodes) in by_view {
+    let mut reads = Reads::default();
+    for (view, (nodes, extras)) in by_view {
         let (time_dim, group_scope) = match group_plan(layer, view, time_dimension, scope) {
             Ok(plan) => plan,
             Err(reason) => {
-                skipped.push(SkippedGroup {
-                    view: view.to_string(),
-                    nodes,
-                    reason,
-                    kind: SkipKind::NotQueried,
-                });
+                if !nodes.is_empty() {
+                    reads.skipped.push(SkippedGroup {
+                        view: view.to_string(),
+                        nodes,
+                        reason,
+                        kind: SkipKind::NotQueried,
+                    });
+                }
                 continue;
             }
         };
+        let filters = window_filters(&time_dim, period, &group_scope);
+        if !nodes.is_empty() {
+            reads.read_nodes(view, nodes, &filters, executor);
+        }
+        reads.read_extras(view, &extras, &filters, executor);
+    }
+
+    let outcome = values_outcome(
+        &reads.values,
+        reads.ran,
+        reads.any_rows,
+        &reads.errors,
+        inputs.nodes.is_empty(),
+    );
+    GroupedValues {
+        values: reads.values,
+        outcome,
+        skipped: reads.skipped,
+        input_errors: reads.input_errors,
+    }
+}
+
+/// What `grouped_values` has read so far, across views.
+#[derive(Default)]
+struct Reads {
+    values: HashMap<String, f64>,
+    skipped: Vec<SkippedGroup>,
+    errors: Vec<String>,
+    input_errors: Vec<String>,
+    ran: usize,
+    any_rows: bool,
+}
+
+impl Reads {
+    /// One view's tree nodes, in one request.
+    fn read_nodes(
+        &mut self,
+        view: &str,
+        nodes: Vec<String>,
+        filters: &[QueryFilter],
+        executor: &QueryExecutor,
+    ) {
         let query = QueryRequest {
             measures: nodes.clone(),
-            filters: window_filters(&time_dim, period, &group_scope),
+            filters: filters.to_vec(),
             ..QueryRequest::new()
         };
-        ran += 1;
+        self.ran += 1;
         match executor(&query) {
             Err(e) => {
-                errors.push(format!("`{view}`: {e}"));
-                skipped.push(SkippedGroup {
+                self.errors.push(format!("`{view}`: {e}"));
+                self.skipped.push(SkippedGroup {
                     view: view.to_string(),
                     nodes,
                     reason: e.to_string(),
@@ -399,23 +458,57 @@ pub(crate) fn grouped_values(
                 });
             }
             Ok(rows) => {
-                let Some(row) = rows.first() else { continue };
-                any_rows = true;
+                let Some(row) = rows.first() else { return };
+                self.any_rows = true;
                 for id in nodes {
                     let alias = id.replace('.', "__");
                     if let Some(v) = measure_value(row, &alias) {
-                        values.insert(id, v);
+                        self.values.insert(id, v);
                     }
                 }
             }
         }
     }
 
-    let outcome = values_outcome(&values, ran, any_rows, &errors, wanted.is_empty());
-    GroupedValues {
-        values,
-        outcome,
-        skipped,
+    /// One view's expression-only inputs, asked for by the name the expression
+    /// reads and read back under their source alias. A failure leaves these
+    /// inputs, and nothing else, without a value, and adds no note; it is
+    /// logged and recorded in `input_errors` so the read is not cached.
+    fn read_extras(
+        &mut self,
+        view: &str,
+        extras: &[&ExprInput],
+        filters: &[QueryFilter],
+        executor: &QueryExecutor,
+    ) {
+        if extras.is_empty() {
+            return;
+        }
+        let names: Vec<String> = extras.iter().map(|m| m.requested.clone()).collect();
+        let query = QueryRequest {
+            measures: names.clone(),
+            filters: filters.to_vec(),
+            ..QueryRequest::new()
+        };
+        let rows = match executor(&query) {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::warn!(
+                    view,
+                    inputs = ?names,
+                    error = %e,
+                    "metric-tree baseline: expression-only input read failed"
+                );
+                self.input_errors.push(format!("`{view}` {names:?}: {e}"));
+                return;
+            }
+        };
+        let Some(row) = rows.first() else { return };
+        for input in extras {
+            if let Some(v) = measure_value(row, &input.alias()) {
+                self.values.insert(input.requested.clone(), v);
+            }
+        }
     }
 }
 
@@ -2011,5 +2104,218 @@ dimensions:
         // Grouping only works while the reason names no view of its own.
         assert!(!reason.contains("daily_operations"), "{reason}");
         assert!(!reason.contains("quickbooks_pl"), "{reason}");
+    }
+
+    /// `stores.guest_covers` multiplies the root by `stores.covers`, a node
+    /// no edge from the root reaches.
+    ///
+    /// `stores.net_per_guest` reads `{{stores.net_sales}}`, which `sales`
+    /// declares and `stores` only inherits through the shared `store_id`
+    /// entity — an induced measure, queryable but no tree node, so no edge
+    /// leads to it. `extra_sources` adds views declaring `net_sales` too, so
+    /// the induced name is reachable from several.
+    fn induced_layer(extra_sources: &[&str]) -> SemanticLayer {
+        let stores = r#"
+name: stores
+table: public.stores
+dialect: postgres
+entities:
+  - name: store_id
+    type: primary
+    key: store_id
+dimensions:
+  - name: store_id
+    type: string
+    expr: store_id
+  - name: business_date
+    type: date
+    expr: business_date
+measures:
+  - name: guests
+    type: sum
+    expr: guests
+  - name: net_per_guest
+    type: number
+    expr: "{{stores.net_sales}} / NULLIF({{stores.guests}}, 0)"
+  - name: covers
+    type: sum
+    expr: covers
+  - name: guest_covers
+    type: number
+    expr: "{{stores.guests}} * {{stores.covers}}"
+"#;
+        let source = |name: &str| {
+            format!(
+                "name: {name}\ntable: public.{name}\ndialect: postgres\nentities:\n  - name: \
+                 store_id\n    type: foreign\n    key: store_id\ndimensions:\n  - name: \
+                 store_id\n    type: string\n    expr: store_id\nmeasures:\n  - name: \
+                 net_sales\n    type: sum\n    expr: net_sales\n"
+            )
+        };
+        let mut views = vec![
+            oxy_airlayer_compat::parse_view_yaml(stores).unwrap(),
+            oxy_airlayer_compat::parse_view_yaml(&source("sales")).unwrap(),
+        ];
+        for name in extra_sources {
+            views.push(oxy_airlayer_compat::parse_view_yaml(&source(name)).unwrap());
+        }
+        SemanticLayer::new(views, None)
+    }
+
+    /// Answers the way `compile_query` does: every measure under its own
+    /// alias, except the induced `stores.net_sales`, which is rewritten to its
+    /// source and so comes back keyed `sales__net_sales`.
+    fn induced_executor(seen: Arc<Mutex<Vec<QueryRequest>>>) -> Box<QueryExecutor> {
+        Box::new(move |req: &QueryRequest| {
+            seen.lock().unwrap().push(req.clone());
+            let mut row = Row::new();
+            for m in &req.measures {
+                let (alias, v) = match m.as_str() {
+                    "stores.net_sales" => ("sales__net_sales".to_string(), 40.0),
+                    "stores.guests" => (m.replace('.', "__"), 2.0),
+                    _ => (m.replace('.', "__"), 20.0),
+                };
+                row.insert(alias, serde_json::json!(v));
+            }
+            Ok(vec![row])
+        })
+    }
+
+    /// The predict baseline's half of airlayer's
+    /// `reachable_values_outcome_reads_an_induced_input_by_its_source_alias`:
+    /// a reached composite is recomputed from every input its expression
+    /// reads, and an induced one is read back under its source alias. Without
+    /// either, the composite has no level and its impact is unquantifiable.
+    #[test]
+    fn an_induced_input_is_read_by_its_source_alias() {
+        let layer = induced_layer(&[]);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let executor = induced_executor(seen.clone());
+        let read = grouped_values(
+            &tree(&layer),
+            &layer,
+            &["stores.guests".to_string()],
+            "stores.business_date",
+            WINDOW,
+            &[],
+            &*executor,
+        );
+        let requests = seen.lock().unwrap().clone();
+        assert_eq!(
+            read.values.get("stores.net_sales"),
+            Some(&40.0),
+            "values {:?}, requests {requests:?}",
+            read.values
+        );
+        assert_eq!(read.values.get("stores.guests"), Some(&2.0));
+    }
+
+    /// A reached composite is recomputed from every input, so the one beside
+    /// the lever's path is read too: `guest_covers` moves with `guests`, and
+    /// sizing that needs `covers`' level although nothing pushes into it.
+    #[test]
+    fn a_reached_composite_s_other_input_is_read() {
+        let layer = induced_layer(&[]);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let executor = induced_executor(seen.clone());
+        let read = grouped_values(
+            &tree(&layer),
+            &layer,
+            &["stores.guests".to_string()],
+            "stores.business_date",
+            WINDOW,
+            &[],
+            &*executor,
+        );
+        assert_eq!(
+            read.values.get("stores.covers"),
+            Some(&20.0),
+            "{:?}",
+            read.values
+        );
+    }
+
+    /// The induced read is its own request, so a refusal there — the engine
+    /// cannot compile it, or the ref was a dimension — leaves only that input
+    /// unvalued, never the view's own measures beside it.
+    #[test]
+    fn a_failed_induced_read_leaves_the_view_s_own_values() {
+        let layer = induced_layer(&[]);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let inner = induced_executor(seen.clone());
+        let log = seen.clone();
+        let executor: Box<QueryExecutor> = Box::new(move |req: &QueryRequest| {
+            if req.measures.iter().any(|m| m == "stores.net_sales") {
+                log.lock().unwrap().push(req.clone());
+                return Err(EngineError::QueryError("refused".to_string()));
+            }
+            inner(req)
+        });
+        let read = grouped_values(
+            &tree(&layer),
+            &layer,
+            &["stores.guests".to_string()],
+            "stores.business_date",
+            WINDOW,
+            &[],
+            &*executor,
+        );
+        assert!(
+            !read.values.contains_key("stores.net_sales"),
+            "{:?}",
+            read.values
+        );
+        assert_eq!(read.values.get("stores.guests"), Some(&2.0));
+        assert!(matches!(read.outcome, BaselineOutcome::Valued { .. }));
+        assert!(read.skipped.is_empty(), "{:?}", read.skipped);
+        // Silent in the response, not in the read: the caller must know not
+        // to cache a baseline missing an input it could have had.
+        assert_eq!(read.input_errors.len(), 1, "{:?}", read.input_errors);
+        assert!(
+            read.input_errors[0].contains("stores.net_sales")
+                && read.input_errors[0].contains("refused"),
+            "{:?}",
+            read.input_errors
+        );
+        let requests = seen.lock().unwrap().clone();
+        assert!(
+            requests
+                .iter()
+                .any(|r| r.measures.iter().any(|m| m == "stores.net_sales")),
+            "the induced input should have been asked for: {requests:?}"
+        );
+    }
+
+    /// Reachable from `sales` and `refunds`: picking one would answer a
+    /// different question, and asking for it fails the request in the engine,
+    /// so it is neither asked for nor valued — and the view's own measures are
+    /// still read.
+    #[test]
+    fn an_ambiguous_induced_input_is_left_without_a_value() {
+        let layer = induced_layer(&["refunds"]);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let executor = induced_executor(seen.clone());
+        let read = grouped_values(
+            &tree(&layer),
+            &layer,
+            &["stores.guests".to_string()],
+            "stores.business_date",
+            WINDOW,
+            &[],
+            &*executor,
+        );
+        assert!(
+            !read.values.contains_key("stores.net_sales"),
+            "{:?}",
+            read.values
+        );
+        assert_eq!(read.values.get("stores.guests"), Some(&2.0));
+        let requests = seen.lock().unwrap().clone();
+        assert!(
+            requests
+                .iter()
+                .all(|r| !r.measures.iter().any(|m| m == "stores.net_sales")),
+            "{requests:?}"
+        );
     }
 }

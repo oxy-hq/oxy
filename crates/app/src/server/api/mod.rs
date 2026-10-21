@@ -79,6 +79,7 @@ pub mod metric_anomalies;
 pub mod metric_tree;
 pub mod metric_tree_baseline;
 pub mod metric_tree_groups;
+pub mod metric_tree_inputs;
 pub mod metric_tree_probe;
 pub mod metric_tree_projection;
 pub mod metrics;

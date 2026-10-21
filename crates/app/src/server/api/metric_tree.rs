@@ -679,6 +679,9 @@ pub(crate) const BASELINE_QUERY_HEADROOM: std::time::Duration = std::time::Durat
 /// = V(V+3)/2 executor calls
 /// ```
 ///
+/// plus one more `grouped_values` request for each view whose reached
+/// composites read an input that is no tree node (an induced measure — see
+/// `metric_tree_inputs`), so at most `V` more and none on a tree without one;
 /// and each of those may fan out again, into one query per (view, additivity)
 /// group, when airlayer refuses the batch. `example_new` — the workspace this
 /// repo's fixtures and `tests/platform/metric_tree_fit_panel` run against —
@@ -774,6 +777,27 @@ pub(crate) struct BaselineReads {
     pub fitted: Vec<FittedDriver>,
     /// Views the values read could not ask about. Empty in the ordinary case.
     pub skipped: Vec<SkippedGroup>,
+    /// Expression-only input reads that failed — see `GroupedValues`.
+    pub input_errors: Vec<String>,
+}
+
+/// The warehouse failure, if any, that makes `reads` unfit to cache.
+///
+/// Now that the read runs one query per view, a warehouse failure need not
+/// reach the outcome at all: one view answering makes it `Valued` while
+/// another errored, or while a view's expression-only inputs did. Each has to
+/// suppress the cache, or a transient failure gets remembered as that view —
+/// or that input — having no value.
+pub(crate) fn baseline_failure(reads: &BaselineReads) -> Option<String> {
+    if let BaselineOutcome::ExecutorError(e) = &reads.outcome {
+        return Some(e.clone());
+    }
+    reads
+        .skipped
+        .iter()
+        .find(|s| s.kind == SkipKind::QueryFailed)
+        .map(|s| format!("`{}`: {}", s.view, s.reason))
+        .or_else(|| reads.input_errors.first().cloned())
 }
 
 /// Both warehouse reads a scenario baseline needs, against one executor.
@@ -855,6 +879,7 @@ pub(crate) fn baseline_reads(
         outcome: grouped.outcome,
         fitted,
         skipped: grouped.skipped,
+        input_errors: grouped.input_errors,
     }
 }
 
@@ -1872,6 +1897,29 @@ measures:
         assert_eq!(unvalued.len(), 1);
         assert_eq!(unvalued[0].node_id, "orders.profit");
         assert_eq!(unvalued[0].reason, UnvaluedReason::NotQueried);
+    }
+
+    #[test]
+    fn a_failed_input_read_alone_keeps_the_baseline_out_of_the_cache() {
+        // Every view answered, so the outcome is `Valued` and nothing was
+        // skipped; only a composite's expression-only input went unread.
+        let reads = BaselineReads {
+            values: HashMap::from([("stores.guests".to_string(), 2.0)]),
+            outcome: BaselineOutcome::Valued {
+                unreadable: Vec::new(),
+            },
+            fitted: Vec::new(),
+            skipped: Vec::new(),
+            input_errors: vec!["`stores` [\"stores.net_sales\"]: refused".to_string()],
+        };
+        let failure = baseline_failure(&reads).expect("a failed input read is a failure");
+        assert!(failure.contains("stores.net_sales"), "{failure}");
+
+        let clean = BaselineReads {
+            input_errors: Vec::new(),
+            ..reads
+        };
+        assert_eq!(baseline_failure(&clean), None);
     }
 
     #[test]
