@@ -471,13 +471,14 @@ pub(crate) fn spawn_recovery(
                     );
                 }
                 // Once more after the lease TTL — see `LAPSED_LEASE_PASS_DELAY`.
-                let (db, runtime, schema_cache, ws_cache, preagg, shutdown) = (
+                let (db, runtime, schema_cache, ws_cache, preagg, shutdown, custom_tasks) = (
                     db.clone(),
                     runtime.clone(),
                     schema_cache.clone(),
                     ws_cache.clone(),
                     preagg.clone(),
                     shutdown.clone(),
+                    custom_tasks.clone(),
                 );
                 let (builder_test_runner, builder_app_runner, router) = (
                     builder_test_runner.clone(),
@@ -500,6 +501,7 @@ pub(crate) fn spawn_recovery(
                         false,
                         ws_cache,
                         preagg,
+                        custom_tasks,
                         policy,
                     )
                     .await;
