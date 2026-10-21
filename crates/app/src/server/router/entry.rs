@@ -79,7 +79,10 @@ pub async fn api_router(
         // Documentation only — `build_openapi_doc` merges it, not the router.
         openapi: _,
     } = seams;
-    let agentic_state = new_agentic_state(shutdown_token, true).await?;
+    // Boot cleanup only where the startup pass runs: a `serve` replica
+    // (`--no-workers`) resumes nothing, so every row it would reconcile belongs
+    // to another process — and it boots on every deploy and scale-up.
+    let agentic_state = new_agentic_state(shutdown_token, !disable_inprocess_workers).await?;
 
     // Layer-1 (per-query) preagg refresh-key cache, shared with every request
     // via `AppState` → `PreaggCacheCtx`. Node-local and workspace-agnostic (a

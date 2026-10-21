@@ -7,11 +7,13 @@
 //! them.
 
 pub mod adopt;
+pub mod boot_cleanup;
 pub mod outcomes;
 pub mod queue;
 pub mod recovery;
 
 pub use adopt::adopt_queued_task;
+pub use boot_cleanup::cleanup_stale_runs;
 pub use outcomes::{
     complete_child_done_txn, complete_child_failed_txn, get_outcomes_for_parent, get_run_answer,
     insert_child_run, insert_task_outcome, suspend_with_data_txn,
@@ -27,8 +29,7 @@ pub use queue::{
     set_terminal_status_owned, update_queue_heartbeat,
 };
 pub use recovery::{
-    StuckRun, cleanup_stale_runs, complete_run_with_lost_outcome, dead_letter_run,
-    find_pending_global_runs, find_stuck_automation_runs, find_stuck_runs, get_active_root_runs,
-    get_max_child_counter, get_resumable_root_runs, increment_attempt, mark_recovery_failed,
-    owning_run_id, retire_run,
+    StuckRun, complete_run_with_lost_outcome, dead_letter_run, find_pending_global_runs,
+    find_stuck_automation_runs, find_stuck_runs, get_active_root_runs, get_max_child_counter,
+    get_resumable_root_runs, increment_attempt, mark_recovery_failed, owning_run_id, retire_run,
 };

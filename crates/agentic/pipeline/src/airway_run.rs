@@ -546,6 +546,7 @@ pub fn spawn_airway_run_drive(
 
     let transport = DurableTransport::with_router(db.clone(), router, Some(run_id.clone()));
 
+    let lease_db = db.clone();
     let mut coordinator = Coordinator::new(
         db,
         state.clone(),
@@ -583,8 +584,17 @@ pub fn spawn_airway_run_drive(
     let cleanup_run_id = run_id.clone();
     let cleanup_state = state;
     spawn_with_hub(async move {
+        // The driver lease is what tells every other process this run is
+        // alive (`agentic_runtime::lifecycle::driver_lease`).
+        let lease = agentic_runtime::lifecycle::driver_lease::hold_direct_drive_lease(
+            &lease_db,
+            cleanup_state.clone(),
+            &cleanup_run_id,
+        )
+        .await;
         let mut coord = coordinator;
         coord.run().await;
+        lease.release().await;
         // Close the SSE stream cleanly once the run terminates —
         // mirrors the automation drive's shutdown sequence.
         cleanup_state.notify(&cleanup_run_id);

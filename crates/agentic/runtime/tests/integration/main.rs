@@ -8,6 +8,8 @@
 //! See `internal-docs/testing.md` for the cost model.
 
 mod adopt_queued_task_test;
+mod boot_cleanup_liveness_test;
+mod direct_drive_lease_test;
 mod duplicate_delegation_test;
 mod eviction_safety_test;
 mod integration_tests;

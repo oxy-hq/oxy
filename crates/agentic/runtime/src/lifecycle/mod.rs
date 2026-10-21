@@ -12,6 +12,7 @@
 
 pub mod bridge;
 pub mod crud;
+pub mod driver_lease;
 pub mod entity;
 pub mod event_registry;
 pub mod failure_hook;

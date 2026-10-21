@@ -421,6 +421,7 @@ pub fn spawn_automation_run_drive(
     // coordinator hangs forever waiting for a child that's already done.
     let transport = DurableTransport::with_router(db.clone(), router, Some(run_id.clone()));
 
+    let lease_db = db.clone();
     let mut coordinator = Coordinator::new(
         db,
         state.clone(),
@@ -476,8 +477,17 @@ pub fn spawn_automation_run_drive(
     let cleanup_run_id = run_id.clone();
     let cleanup_state = state;
     spawn_with_hub(async move {
+        // The driver lease is what tells every other process this run is
+        // alive (`agentic_runtime::lifecycle::driver_lease`).
+        let lease = agentic_runtime::lifecycle::driver_lease::hold_direct_drive_lease(
+            &lease_db,
+            cleanup_state.clone(),
+            &cleanup_run_id,
+        )
+        .await;
         let mut coord = coordinator;
         coord.run().await;
+        lease.release().await;
         // SSE keeps streaming while the notifier exists; without this
         // cleanup the stream stays open after the run terminates and the
         // client never observes a terminal close. Mirror the analytics-side

@@ -16,9 +16,8 @@
 //! reported it `failed` ("server restarted: run never started") under that
 //! driver.
 //!
-//! The last test pins the other arm's safety argument rather than a change:
-//! stamping `needs_resume` on a run a live peer drives hands it to no recovery
-//! pass that would not have taken it anyway.
+//! The last test pins the other arm: a run a live peer drives is not stamped
+//! `needs_resume` either (see `boot_cleanup_liveness_test`).
 //!
 //! Run:
 //!   cargo nextest run -p agentic-runtime --test integration -E 'test(stale_run_cleanup_test)'
@@ -267,18 +266,15 @@ async fn selected_by(db: &DatabaseConnection, run_id: &str) -> [bool; 3] {
     ]
 }
 
-/// The other arm, which this module does not change: a run WITH events is
-/// stamped `needs_resume` at every boot, live driver or not. What makes that
-/// tolerable is that the stamp changes no recovery selection — a run a live
-/// peer drives is offered to exactly the passes it was offered to before.
-///
-/// Two shapes, because two different things keep a second driver off:
-/// a queue-driven run holds the driver lease, and no pass selects it at all;
-/// a direct-driven run holds only its claimed, scope-owned entry, which the
-/// two queue-gated passes honour (the startup pass does not, stamp or no
-/// stamp — the reason only `oxy serve` runs it).
+/// The other arm: a run WITH events a live peer is driving is no longer
+/// stamped `needs_resume` at boot, and its selections are unchanged. Two
+/// shapes, because two different things hold a run: a queue-driven run holds
+/// the driver lease, a direct-driven run with a claimed, scope-owned entry
+/// holds its task tree. (A direct drive also takes the lease now —
+/// `lifecycle::driver_lease` — so the startup pass skips it too; this fixture
+/// models the entry alone, which the two queue-gated passes honour.)
 #[tokio::test(flavor = "multi_thread")]
-async fn stamping_needs_resume_on_a_live_peers_run_changes_no_selection() {
+async fn a_live_peers_run_is_not_stamped_and_its_selections_are_unchanged() {
     let Some(db) = test_db().await else {
         eprintln!("skipping: no DB available");
         return;
@@ -310,21 +306,13 @@ async fn stamping_needs_resume_on_a_live_peers_run_changes_no_selection() {
     assert_eq!(
         before[1],
         [true, false, false],
-        "a direct-driven run is excluded by the two queue-gated passes only"
+        "an entry-only run is excluded by the two queue-gated passes"
     );
 
     crud::cleanup_stale_runs(&db).await.unwrap();
 
     for (run_id, before) in [&queue_driven, &direct_driven].into_iter().zip(before) {
-        let (status, _) = run_state(&db, run_id).await;
-        assert_eq!(status.as_deref(), Some("needs_resume"));
-        // The stamp moved `updated_at`, which would hide the run from the
-        // stranded tick behind its grace window; age it back out.
-        age_run(&db, run_id, 120).await;
-        assert_eq!(
-            selected_by(&db, run_id).await,
-            before,
-            "`needs_resume` must not make a run selectable that was not already"
-        );
+        assert_eq!(run_state(&db, run_id).await, untouched(), "not stamped");
+        assert_eq!(selected_by(&db, run_id).await, before);
     }
 }

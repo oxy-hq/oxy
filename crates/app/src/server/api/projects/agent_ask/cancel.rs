@@ -19,12 +19,11 @@
 //!    flag into a proper `cancelled`. What is left is a run nobody will ever
 //!    close, and failing it is what keeps it from reading `running` for ever.
 //!
-//! **What this cannot see.** An ask its *handler* is driving on another
-//! replica holds neither a lease nor a queue entry, so from here it reads as
-//! undriven: the row is failed while that replica keeps going. That is the
-//! one case left, and it is closed by moving the ask onto the task queue
-//! (`internal-docs/worker-fleet.md` § "Custom-app runs on the queue"), where
-//! every driven ask holds both.
+//! **An ask its handler is driving on another replica** holds the driver lease
+//! (`drive_with_coordinator` takes it through
+//! `agentic_runtime::lifecycle::driver_lease`), so step 3 leaves it alone and
+//! the flag from step 1 reaches it: that lease's ticker polls the flag and
+//! fires the driving replica's cancel channel within about 5 s.
 //!
 //! **On an app's staging host** it is the same decision as the ask
 //! ([`ask_scope`]), and it cancels only a run that app's staging ask started

@@ -54,6 +54,11 @@ static SHUTDOWN_HOOKS: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>> =
 /// or wedged database can never be the reason a pod gets SIGKILLed.
 const SHUTDOWN_HOOK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// How long the shutdown hook waits for cancelled direct drives to release
+/// their driver leases. Well inside [`SHUTDOWN_HOOK_TIMEOUT`], which also has
+/// to cover the queue releases after it.
+const DIRECT_DRIVE_UNWIND_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// Spawn the graceful-shutdown hook. Returns immediately.
 ///
 /// When `agentic_state.shutdown_token` is cancelled (the serve command
@@ -94,6 +99,22 @@ pub(super) fn spawn_shutdown_hook(agentic_state: Arc<AgenticState>) {
                 target: "recovery",
                 count,
                 "graceful shutdown: marked active runs resumable"
+            );
+        }
+        // Give the cancelled direct drives a moment to unwind: each releases
+        // its own driver lease on the way out, so the successor's first
+        // startup pass resumes those `shutdown` runs at boot. A drive still
+        // running past the wait keeps its lease (it lapses within the TTL)
+        // — releasing it here would let a peer re-drive a live run.
+        let still_held = agentic_runtime::lifecycle::driver_lease::await_held_leases_released(
+            DIRECT_DRIVE_UNWIND_WAIT,
+        )
+        .await;
+        if still_held > 0 {
+            tracing::info!(
+                target: "recovery",
+                still_held,
+                "graceful shutdown: direct drives still unwinding; their leases lapse within the TTL"
             );
         }
 
@@ -278,23 +299,27 @@ fn inproc_global_worker_interval() -> std::time::Duration {
 ///   `scope_owned = true` — entry in `agentic_task_queue`, and both queries
 ///   exclude exactly that. They cannot poach a live run, from any process.
 /// - The one-shot pass (`get_resumable_root_runs`) has **no queue predicate**.
-///   Its only guard is the driver lease, and no direct-drive path calls
-///   `try_acquire_driver` — the lease is taken only inside
-///   `recover_single_run`. So a run being direct-driven right now has
-///   `driver_id IS NULL` and the one-shot pass selects it.
+///   Its only guard is the driver lease. Every driver takes it now (see below),
+///   but a lease taken by a driver that has just died still reads live for up
+///   to the TTL, and the pass also resumes `awaiting_input` and `shutdown`
+///   roots, which no driver holds by design.
 ///
-///   Interactive **airway** submits are no longer among those: they enqueue
-///   `TaskScope::Global` and are driven through `recover_single_run` like any
-///   other queued work. The remaining direct-drivers are analytics, builder,
-///   the chunked backfill (`agentic-pipeline::backfill`) and the
-///   `oxy airway run` CLI — enough that the premise below is unchanged, but
-///   `spawn_airway_run_drive` is no longer the example to reach for.
+/// That is sound in `oxy serve` (role `ide` / `all`), the one process whose
+/// own direct drives it is recovering. It is **not** the right pass for
+/// `oxy worker`: a worker restart (rolling deploy, OOM, HPA scale-up) says
+/// nothing about a run parked on human input or marked `shutdown` by the `ide`
+/// — those belong to the process that will host their coordinator. Hence the
+/// split.
 ///
-/// That is sound in `oxy serve`, where the pass runs once at boot and the
-/// coordinators it would collide with died with the previous process. It is
-/// **not** sound in `oxy worker`: a worker restart (rolling deploy, OOM, HPA
-/// scale-up) says nothing about whether the IDE node is mid-run, so a
-/// worker-side one-shot pass would re-drive live work. Hence the split.
+/// **Every live driver now holds the driver lease** — recovery drives always
+/// did, and direct drives (chat, builder, custom-app asks on a serve replica,
+/// interactive automations and backfills) take it through
+/// `agentic_runtime::lifecycle::driver_lease`. So the one-shot pass, which is
+/// lease-gated, no longer selects a run a live peer is driving (a serve
+/// replica's ask was the case that reached it). What the lease costs is that a
+/// driver which died moments before this boot still looks live for up to
+/// `DRIVER_LEASE_TTL_SECS`; hence the pass runs a second time after
+/// [`LAPSED_LEASE_PASS_DELAY`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StartupPass {
     /// Run it — this process is the one whose death orphaned the runs
@@ -307,6 +332,16 @@ pub(crate) enum StartupPass {
     /// is lost, only delayed.
     Skip,
 }
+
+/// When the one-shot startup pass runs a second time.
+///
+/// The previous process's drives held driver leases, heartbeated every third
+/// of the TTL; a crash leaves them looking live for up to
+/// `DRIVER_LEASE_TTL_SECS`, and the first pass skips them. By this delay every
+/// dead driver's lease has lapsed, while a live peer's has been renewed, so the
+/// second pass picks up exactly the runs the first one had to leave.
+const LAPSED_LEASE_PASS_DELAY: std::time::Duration =
+    std::time::Duration::from_secs(agentic_runtime::crud::DRIVER_LEASE_TTL_SECS as u64 + 15);
 
 /// Spawn startup recovery in the background. Returns immediately.
 ///
@@ -322,16 +357,11 @@ pub(crate) enum StartupPass {
 /// `recover_single_run`'s `try_acquire_driver` CAS, so the loser of a race
 /// skips.
 ///
-/// NOTE: an earlier version of this comment justified repeat calls with
-/// "`get_resumable_root_runs` is driver-lease-gated (F1), so an in-flight run a
-/// live driver owns is excluded". The function is lease-gated, but that premise
-/// is false — a direct-drive never takes the lease, so a direct-driven run has
-/// `driver_id IS NULL` and IS selected. What actually keeps callers apart is
-/// the queue predicate, which is why the one-shot pass is gated behind
-/// [`StartupPass`] rather than run unconditionally. (That note originally named
-/// `spawn_airway_run_drive`; airway submits go through the queue now, but
-/// analytics, builder, the chunked backfill and the CLI still direct-drive, so
-/// the reasoning stands on them.)
+/// NOTE: an earlier version of this comment called `get_resumable_root_runs`
+/// driver-lease-gated while no direct drive took the lease, so a run a peer
+/// process was direct-driving was selected anyway. Direct drives hold the
+/// lease now (`agentic_runtime::lifecycle::driver_lease`), which is what makes
+/// the second, delayed startup pass safe.
 pub(crate) fn spawn_recovery(
     agentic_state: Arc<AgenticState>,
     mode: ServeMode,
@@ -440,6 +470,48 @@ pub(crate) fn spawn_recovery(
                         "startup recovery resumed interrupted runs"
                     );
                 }
+                // Once more after the lease TTL — see `LAPSED_LEASE_PASS_DELAY`.
+                let (db, runtime, schema_cache, ws_cache, preagg, shutdown) = (
+                    db.clone(),
+                    runtime.clone(),
+                    schema_cache.clone(),
+                    ws_cache.clone(),
+                    preagg.clone(),
+                    shutdown.clone(),
+                );
+                let (builder_test_runner, builder_app_runner, router) = (
+                    builder_test_runner.clone(),
+                    builder_app_runner.clone(),
+                    router.clone(),
+                );
+                tokio::spawn(async move {
+                    tokio::select! {
+                        _ = shutdown.cancelled() => return,
+                        _ = tokio::time::sleep(LAPSED_LEASE_PASS_DELAY) => {}
+                    }
+                    let recovered = run_recovery(
+                        &db,
+                        runtime,
+                        schema_cache,
+                        builder_test_runner,
+                        builder_app_runner,
+                        router,
+                        mode,
+                        false,
+                        ws_cache,
+                        preagg,
+                        policy,
+                    )
+                    .await;
+                    if recovered > 0 {
+                        tracing::info!(
+                            target: "recovery",
+                            recovered,
+                            mode = mode.label(),
+                            "startup recovery resumed runs whose previous driver's lease lapsed"
+                        );
+                    }
+                });
             }
             StartupPass::Skip => tracing::info!(
                 target: "recovery",

@@ -1449,6 +1449,7 @@ pub async fn drive_with_coordinator(
     // `workflow_continue` outcome from a chained `Automation` spec
     // *and* needs the resolver to route loop bodies / single
     // steps / on-disk automations to the right TaskSpec variant.
+    let lease_db = db.clone();
     let mut coordinator = Coordinator::new(
         db,
         state.clone(),
@@ -1713,9 +1714,19 @@ pub async fn drive_with_coordinator(
         worker.run().await;
     });
 
+    // Hold the driver lease for the life of the drive: it is what tells every
+    // other process this run is alive (`agentic_runtime::lifecycle::driver_lease`).
+    let lease = agentic_runtime::lifecycle::driver_lease::hold_direct_drive_lease(
+        &lease_db,
+        state.clone(),
+        &run_id,
+    )
+    .await;
+
     // Run the coordinator (blocks until all tasks complete).
     tracing::debug!(target: "coordinator", run_id = %run_id, "drive_with_coordinator: starting coordinator loop");
     coordinator.run().await;
+    lease.release().await;
     tracing::debug!(target: "coordinator", run_id = %run_id, "drive_with_coordinator: coordinator loop finished");
 
     // Wait for the bridge task to flush remaining events (including `done`)

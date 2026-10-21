@@ -404,8 +404,9 @@ pub async fn start_ask(
     // coordinator's drive loop on the same instance. Without
     // registering it, the cancel endpoint would only stamp the DB row
     // and the drive loop would keep burning LLM budget until natural
-    // completion. A cancel that lands on ANOTHER replica cannot reach
-    // it: this drive does not poll the durable flag (see `cancel`).
+    // completion. A cancel that lands on ANOTHER replica reaches it within
+    // about 5 s through the durable flag, which the drive's driver-lease
+    // ticker polls (`agentic_runtime::lifecycle::driver_lease`).
     //
     // `answer_tx` is registered but the custom-app surface
     // doesn't expose a `/answer` endpoint — clarification answers
