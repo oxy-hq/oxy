@@ -25,6 +25,7 @@ use crate::orchestrator::router::{NoopTaskRouter, TaskRouter};
 mod adopt;
 mod beat;
 mod claims;
+mod dead_letter;
 
 use claims::{ClaimTokens, Heartbeats, fence};
 
@@ -433,10 +434,15 @@ impl DurableTransport {
     }
 
     /// Stamp a terminal outcome on the queue row this execution's claim holds.
-    /// Returns whether the outcome should reach the coordinator.
-    async fn stamp_outcome(&self, task_id: &str, claim: ClaimEpoch, outcome: &TaskOutcome) -> bool {
+    /// Returns what, if anything, should reach the coordinator.
+    async fn stamp_outcome(
+        &self,
+        task_id: &str,
+        claim: ClaimEpoch,
+        outcome: &TaskOutcome,
+    ) -> Forward {
         let Some(result) = self.write_outcome(task_id, claim, outcome).await else {
-            return false;
+            return Forward::Nothing;
         };
         match result {
             Ok(crud::TerminalWrite::Stamped) => {}
@@ -471,7 +477,7 @@ impl DurableTransport {
                     "outcome not recorded: this claim was lost (released on shutdown, \
                      reaped, or re-claimed)"
                 );
-                return self.stale_outcome_should_forward(task_id).await;
+                return self.stale_outcome_forward(task_id).await;
             }
             Err(e) => tracing::warn!(
                 task_id,
@@ -479,7 +485,7 @@ impl DurableTransport {
                  (the reaper will requeue the row): {e}"
             ),
         }
-        true
+        Forward::AsReported
     }
 
     /// The terminal write for `outcome`, or `None` when it must not be stamped.
@@ -537,74 +543,29 @@ impl DurableTransport {
         Some(result)
     }
 
-    /// Whether an outcome from an execution that no longer holds its claim
-    /// should reach the coordinator.
+    /// What an outcome from an execution that no longer holds its claim
+    /// should become on its way to the coordinator.
     ///
     /// While the row is `queued`/`claimed`, whoever runs it now reports the
     /// run; forwarding the stale outcome would settle the task under them. A
     /// terminal or absent row is forwarded: a Stop from another process reaches
     /// this task as a lost claim, and a reaped row that was then stopped has no
-    /// other reporter. A failed status read forwards too.
-    async fn stale_outcome_should_forward(&self, task_id: &str) -> bool {
-        let live = matches!(
-            crud::get_queue_entry(&self.db, task_id).await,
-            Ok(Some(row)) if matches!(row.queue_status.as_str(), "queued" | "claimed")
-        );
-        if live {
-            tracing::info!(
-                target: "transport",
-                %task_id,
-                "stale execution's outcome not reported; the row's current holder owns it"
-            );
-        }
-        !live
-    }
-
-    /// Mark the run owning a dead-lettered task terminal, so reaching the
-    /// queue's wait ceiling is a visible failure rather than a log line.
-    ///
-    /// Resolved through [`crud::owning_run_id`] rather than by splitting
-    /// `task_id` on `.`: a descendant dead-lettering strands its parent just
-    /// as completely as a root does, and retiring the root is what cancels the
-    /// rest of the tree.
-    ///
-    /// Every failure here is logged and swallowed. The queue row is already
-    /// `dead` by the time this runs, so the worst case is the behaviour that
-    /// shipped before this existed — never a run retired on a task that is
-    /// still live.
-    async fn retire_dead_lettered_run(&self, task_id: &str, reason: &str) {
-        let run_id = match crud::owning_run_id(&self.db, task_id).await {
-            Ok(Some(id)) => id,
-            Ok(None) => {
-                tracing::warn!(
+    /// other reporter. A failed status read forwards too. A row the reaper
+    /// dead-lettered under this execution is reported as the dead-letter
+    /// ([`dead_letter::reported_for_dead_row`]): this execution is the run's
+    /// live driver, the one the reaper leaves the run to.
+    async fn stale_outcome_forward(&self, task_id: &str) -> Forward {
+        match crud::get_queue_entry(&self.db, task_id).await {
+            Ok(Some(row)) if matches!(row.queue_status.as_str(), "queued" | "claimed") => {
+                tracing::info!(
                     target: "transport",
                     %task_id,
-                    "dead-lettered task has no run row; nothing to retire"
+                    "stale execution's outcome not reported; the row's current holder owns it"
                 );
-                return;
+                Forward::Nothing
             }
-            Err(e) => {
-                tracing::error!(
-                    target: "transport",
-                    %task_id, error = %e,
-                    "dead-lettered task: could not resolve its run; the run stays \
-                     non-terminal and will need operator attention"
-                );
-                return;
-            }
-        };
-        match crud::dead_letter_run(&self.db, &run_id, reason).await {
-            Ok(()) => tracing::error!(
-                target: "transport",
-                %task_id, %run_id, %reason,
-                "run failed: its task was dead-lettered by the queue"
-            ),
-            Err(e) => tracing::error!(
-                target: "transport",
-                %task_id, %run_id, error = %e,
-                "dead-lettered task: failed to mark its run terminal; the run stays \
-                 non-terminal and will need operator attention"
-            ),
+            Ok(Some(row)) if row.queue_status == "dead" => Forward::FromDeadRow(Box::new(row)),
+            _ => Forward::AsReported,
         }
     }
 
@@ -831,6 +792,17 @@ impl CoordinatorTransport for DurableTransport {
         // token has fired.
         self.cancel(root_task_id).await
     }
+}
+
+/// What [`DurableTransport::stamp_outcome`] decided about reaching the
+/// coordinator.
+enum Forward {
+    /// Nothing: the outcome is not this execution's to report.
+    Nothing,
+    /// The outcome as the task reported it.
+    AsReported,
+    /// The row was dead-lettered under this execution; report it from the row.
+    FromDeadRow(Box<crate::orchestrator::entity::task_queue::Model>),
 }
 
 /// Attempts at a terminal queue write before giving up. Bounded and small: a
@@ -1141,34 +1113,16 @@ impl WorkerTransport for DurableTransport {
                             "task returned to the queue, deferred"
                         );
                     }
+                    // Waited past the domain's ceiling. The coordinator hears
+                    // it as `Failed` and the run ends — see `dead_letter`.
                     Ok(DeferOutcome::DeadLettered) => {
-                        // Waited past the domain's ceiling. Loud on purpose:
-                        // a pipeline blocked this long is a failure someone
-                        // has to see, and the whole reason to bound the wait
-                        // was that a silently growing queue looks healthy.
-                        tracing::error!(
-                            target: "transport",
-                            %task_id, max_wait_secs, %reason,
-                            "task dead-lettered: waited past its ceiling without \
-                             ever being able to run"
-                        );
-                        // An ERROR line was the whole of it until now, and a
-                        // log line is not a status: the RUN stayed `running`
-                        // for ever while its only queue row sat `dead`, and
-                        // `find_pending_global_runs` requires a `queued` row,
-                        // so nothing ever selected it again. A daily airway
-                        // load could stop permanently with every surface —
-                        // the runs list, the API, any alert keyed on a failed
-                        // run — reporting it as in flight. Bounding the wait
-                        // only helps if reaching the bound is visible, so the
-                        // run goes terminal here, carrying the domain's own
-                        // reason.
-                        //
-                        // Best-effort and never fatal to the deferral: the
-                        // queue row is already `dead`, so a failure here
-                        // leaves exactly the pre-existing behaviour rather
-                        // than a half-applied one.
-                        self.retire_dead_lettered_run(task_id, reason).await;
+                        self.on_deferral_dead_lettered(
+                            task_id,
+                            *claim_epoch,
+                            *max_wait_secs,
+                            reason,
+                        )
+                        .await;
                     }
                     Ok(DeferOutcome::NotHeld) => {
                         tracing::warn!(
@@ -1196,8 +1150,22 @@ impl WorkerTransport for DurableTransport {
                 // The write is fenced on the execution's own claim, so an
                 // execution that lost it matches no row — whether a peer or
                 // this very process holds the row now.
-                if !self.stamp_outcome(task_id, *claim_epoch, outcome).await {
-                    return Ok(());
+                match self.stamp_outcome(task_id, *claim_epoch, outcome).await {
+                    Forward::Nothing => return Ok(()),
+                    Forward::AsReported => {}
+                    Forward::FromDeadRow(row) => {
+                        let outcome = dead_letter::reported_for_dead_row(&row, outcome.clone());
+                        let msg = WorkerMessage::Outcome {
+                            task_id: task_id.clone(),
+                            outcome,
+                            claim_epoch: *claim_epoch,
+                        };
+                        return self
+                            .message_tx
+                            .send(msg)
+                            .await
+                            .map_err(|_| TransportError::ChannelClosed);
+                    }
                 }
             }
             WorkerMessage::Event { .. } => {

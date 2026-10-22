@@ -870,12 +870,13 @@ pub async fn reap_stale_tasks(db: &DatabaseConnection) -> Result<ReapOutcome, Db
         task_id: String,
         run_id: String,
         worker_id: Option<String>,
+        claim_count: i32,
     }
 
     let dead_rows = DeadRow::find_by_statement(Statement::from_string(
         DatabaseBackend::Postgres,
         "WITH dying AS ( \
-             SELECT task_id, run_id, worker_id \
+             SELECT task_id, run_id, worker_id, claim_count \
              FROM agentic_task_queue \
              WHERE queue_status = 'claimed' \
                AND claim_count >= max_claims \
@@ -886,7 +887,7 @@ pub async fn reap_stale_tasks(db: &DatabaseConnection) -> Result<ReapOutcome, Db
          SET queue_status = 'dead', worker_id = NULL, claimed_at = NULL, updated_at = now() \
          FROM dying d \
          WHERE q.task_id = d.task_id \
-         RETURNING d.task_id, d.run_id, d.worker_id"
+         RETURNING d.task_id, d.run_id, d.worker_id, d.claim_count"
             .to_string(),
     ))
     .all(&txn)
@@ -924,6 +925,12 @@ pub async fn reap_stale_tasks(db: &DatabaseConnection) -> Result<ReapOutcome, Db
     // Logged only after the commit: a dead-letter that rolled back is not a
     // dead-letter, and an operator chasing these must not be sent after rows
     // that are still queued.
+    // The run of each dead row, after the commit for the same reason as the
+    // log: a dead-letter that rolled back must not end anyone's run.
+    for r in &dead_rows {
+        end_reaped_run(db, &r.task_id, r.claim_count).await;
+    }
+
     let dead_tasks: Vec<DeadTask> = dead_rows
         .into_iter()
         .map(|r| DeadTask {
@@ -948,6 +955,30 @@ pub async fn reap_stale_tasks(db: &DatabaseConnection) -> Result<ReapOutcome, Db
         dead_lettered: dead_tasks.len() as u64,
         dead_tasks,
     })
+}
+
+/// End the run of a task the reaper just dead-lettered, unless something still
+/// holds it (see [`super::dead_letter`]). The reaper used to stop at the queue
+/// row, leaving the run `running` with nothing that would ever select it.
+///
+/// Best-effort: the row is `dead` and counted already, so a failure is logged
+/// and the run stays as it was.
+async fn end_reaped_run(db: &DatabaseConnection, task_id: &str, claims: i32) {
+    let error = super::dead_letter::reaper_dead_letter_message(claims);
+    match super::dead_letter::fail_dead_lettered_run(db, task_id, &error).await {
+        Ok(super::dead_letter::DeadLetterRun::Failed { run_id }) => tracing::warn!(
+            target: "background", %task_id, %run_id,
+            "run failed: the reaper dead-lettered its task and nothing is driving it"
+        ),
+        Ok(outcome) => tracing::debug!(
+            target: "background", %task_id, ?outcome,
+            "reaper dead-letter: run left to its driver"
+        ),
+        Err(e) => tracing::error!(
+            target: "background", %task_id, error = %e,
+            "reaper dead-letter: could not end its run"
+        ),
+    }
 }
 
 /// Return every claim held by `worker_id` to the queue, **without charging

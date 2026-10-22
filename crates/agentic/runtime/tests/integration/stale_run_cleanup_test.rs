@@ -225,8 +225,17 @@ async fn a_root_with_no_events_and_a_terminal_entry_is_failed() {
     crud::cleanup_stale_runs(&db).await.unwrap();
 
     for (terminal, run_id) in runs {
+        let state = run_state(&db, &run_id).await;
+        if terminal == "dead" {
+            // The reaper ended this one itself (nothing held the run), before
+            // the cleanup ever saw it; the cleanup keeps the reaper's reason.
+            assert_eq!(state.0.as_deref(), Some("failed"));
+            let msg = state.1.unwrap_or_default();
+            assert!(msg.contains("dead-lettered"), "the reaper's reason: {msg}");
+            continue;
+        }
         assert_eq!(
-            run_state(&db, &run_id).await,
+            state,
             failed_as_never_started(),
             "a zero-event root whose entry is `{terminal}` is an orphan"
         );

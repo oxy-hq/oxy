@@ -1546,22 +1546,16 @@ async fn a_dead_lettered_task_fails_its_run() {
     );
 }
 
-/// A dead-lettered CHILD task must retire its ROOT run, not just itself.
+/// A dead-lettered CHILD reaches its coordinator as the child's `Failed`, and
+/// its ROOT run is left to that coordinator while anything in the tree is live.
 ///
-/// A delegated child's run id **is** its task id
-/// (`coordinator::suspension` sets `child_run_id = child_id =
-/// "{task_id}.{n}"`), so a run row exists under both `root` and `root.1` and
-/// only the ordering in `owning_run_id` decides which is retired. Retiring the
-/// child leaves the parent in `delegating` with no live queue row and nothing
-/// to wake it — `find_stuck_runs` sweeps only `source_type = 'workflow'` — so
-/// the run reads as in flight for ever, one level up from the failure this
-/// whole path exists to stop.
-///
-/// The root is also what `cancel_queued_tasks_for_run` needs in order to
-/// cancel the rest of the tree: it matches `task_id = $1 OR task_id LIKE $1 ||
-/// '.%'`, which cancels nothing useful when handed a leaf.
+/// The child's failure belongs to the parent's retry/fallback policy, which
+/// only the coordinator can apply, so the transport no longer retires the root
+/// from under it. A delegating parent's own queue entry is live (`claimed`
+/// while it waits, `queued` here), so the backstop write must leave the run.
+/// The case where nothing holds the tree is the next test.
 #[tokio::test]
-async fn a_dead_lettered_child_task_fails_its_root_run() {
+async fn a_dead_lettered_child_task_reaches_its_coordinator() {
     use agentic_core::transport::{WorkerMessage, WorkerTransport};
     use agentic_runtime::transport::{DurableTransport, process_worker_id};
     use sea_orm::EntityTrait;
@@ -1570,7 +1564,9 @@ async fn a_dead_lettered_child_task_fails_its_root_run() {
         eprintln!("skipping: no DB available");
         return;
     };
-    let (root_id, _root_task) = seed_task(&db, "automation", TaskScope::Global).await;
+    // Scoped, so the root's `queued` entry (the live entry this test needs)
+    // is invisible to the global claim path other tests use.
+    let (root_id, _root_task) = seed_task(&db, "automation", TaskScope::Scoped).await;
 
     // A delegated child, shaped exactly as the coordinator spawns one.
     let child_id = format!("{root_id}.1");
@@ -1603,7 +1599,8 @@ async fn a_dead_lettered_child_task_fails_its_root_run() {
     .await
     .unwrap();
 
-    DurableTransport::new(db.clone())
+    let transport = DurableTransport::new(db.clone());
+    transport
         .send(WorkerMessage::Defer {
             task_id: child_id.clone(),
             delay_secs: 30,
@@ -1620,35 +1617,88 @@ async fn a_dead_lettered_child_task_fails_its_root_run() {
         "precondition: past the ceiling the child's queue row must dead-letter"
     );
 
+    use agentic_core::delegation::TaskOutcome;
+    use agentic_core::transport::CoordinatorTransport;
+    match tokio::time::timeout(std::time::Duration::from_secs(5), transport.recv()).await {
+        Ok(Some(WorkerMessage::Outcome {
+            task_id,
+            outcome: TaskOutcome::Failed(msg),
+            ..
+        })) => {
+            assert_eq!(task_id, child_id);
+            assert!(
+                msg.contains("pipeline yaml not resolvable on this node"),
+                "the coordinator hears the domain's reason: {msg}"
+            );
+        }
+        other => panic!("the coordinator must hear the child's Failed, got {other:?}"),
+    }
     let root = agentic_runtime::entity::run::Entity::find_by_id(root_id.clone())
         .one(&db)
         .await
-        .expect("read the root run")
-        .expect("the root run row exists");
-    assert_eq!(
+        .unwrap()
+        .unwrap();
+    assert_ne!(
         root.task_status.as_deref(),
         Some("failed"),
-        "the ROOT must go terminal — retiring only the child leaves the parent \
-         waiting on a child that will never report"
+        "a tree with a live entry is its coordinator's to end"
     );
-
-    // And the child's own row, which retiring only the root would strand.
-    // Inert while it sits there — listings filter `parent_run_id IS NULL` —
-    // and not permanent: `cleanup_stale_runs`' second pass fails children of
-    // a terminal parent. But that runs at `oxy serve` STARTUP only, so
-    // reconciliation is a restart rather than a sweep, and the row is
-    // non-terminal for as long as the deployment stays up. Closing it in the
-    // same transaction is what removes the dependency on that restart.
-    let child = agentic_runtime::entity::run::Entity::find_by_id(child_id.clone())
-        .one(&db)
+    crud::cancel_queued_tasks_for_run(&db, &root_id)
         .await
-        .expect("read the child run")
-        .expect("the child run row exists");
+        .unwrap();
+}
+
+/// A dead-letter whose tree holds nothing live and whose run has no fresh
+/// driver lease fails the ROOT, not just the child.
+///
+/// A delegated child's run id **is** its task id, so a run row exists under
+/// both `root` and `root.1` and only the ordering in `owning_run_id` decides
+/// which is failed. Failing the child alone would leave the parent in
+/// `delegating` with nothing to wake it. The child's own row goes terminal in
+/// the same statement.
+#[tokio::test]
+async fn a_dead_lettered_child_of_an_unheld_tree_fails_its_root_run() {
+    use sea_orm::EntityTrait;
+
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    let (root_id, root_task) = seed_task(&db, "automation", TaskScope::Global).await;
+    let child_id = format!("{root_id}.1");
+    crud::insert_child_run(&db, &child_id, &root_id, "child", "airway", 0, None)
+        .await
+        .expect("seed child run");
+    // The root's own entry is finished; the child's is dead.
+    db.execute_raw(Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        "UPDATE agentic_task_queue SET queue_status = 'failed' WHERE task_id = $1",
+        [root_task.into()],
+    ))
+    .await
+    .unwrap();
+
+    let outcome = crud::fail_dead_lettered_run(&db, &child_id, "dead-lettered: test")
+        .await
+        .unwrap();
     assert_eq!(
-        child.task_status.as_deref(),
-        Some("failed"),
-        "the child must go terminal too, or a later sweep resurrects it"
+        outcome,
+        crud::DeadLetterRun::Failed {
+            run_id: root_id.clone()
+        }
     );
+    for id in [&root_id, &child_id] {
+        let run = agentic_runtime::entity::run::Entity::find_by_id(id.clone())
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            run.task_status.as_deref(),
+            Some("failed"),
+            "{id} goes terminal"
+        );
+    }
 }
 
 /// Retiring a run must not rewrite a child that already finished.

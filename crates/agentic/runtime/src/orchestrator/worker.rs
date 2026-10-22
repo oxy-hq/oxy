@@ -13,6 +13,8 @@ use serde_json::Value;
 use tokio::sync::{Semaphore, mpsc};
 use tokio_util::sync::CancellationToken;
 
+mod start;
+
 /// Env var controlling the per-worker in-flight task cap.
 ///
 /// "Per-worker" deliberately, not per-run: a single worker process holds
@@ -292,23 +294,20 @@ impl Worker {
         let claim_epoch = assignment.claim_epoch;
         let cancel_token = transport.cancellation_token(&task_id, claim_epoch);
 
-        let executing = match executor.execute(assignment).await {
-            Ok(e) => e,
-            Err(msg) => {
-                tracing::error!(target: "worker", task_id = %task_id, error = %msg, "executor failed to start task");
-                let _ = transport
-                    .send(WorkerMessage::Outcome {
-                        task_id,
-                        outcome: TaskOutcome::Failed(msg),
-                        claim_epoch,
-                    })
-                    .await;
+        // Beat from the claim, not from the first outcome: `execute` can take
+        // longer than the visibility timeout. DurableTransport updates the DB,
+        // LocalTransport no-ops. See `start` for the rest of the start.
+        let heartbeat_cancel = transport.spawn_heartbeat(&task_id, claim_epoch, HEARTBEAT_INTERVAL);
+
+        let executing = match start::start_task(executor.as_ref(), assignment, &cancel_token).await
+        {
+            start::Started::Running(e) => e,
+            start::Started::Ended(outcome) => {
+                Self::report_unstarted(&*transport, task_id, *outcome, claim_epoch).await;
+                heartbeat_cancel.cancel();
                 return;
             }
         };
-
-        // Spawn heartbeat loop — DurableTransport updates DB, LocalTransport no-ops.
-        let heartbeat_cancel = transport.spawn_heartbeat(&task_id, claim_epoch, HEARTBEAT_INTERVAL);
 
         // Forward cancellation from transport to the executing task.
         let task_cancel = executing.cancel.clone();
@@ -500,6 +499,38 @@ impl Worker {
         }
         event_fwd.await.ok();
         cancel_fwd.abort();
+    }
+
+    /// Report a task that ended before it ran — refused, panicked or stopped
+    /// inside `execute`. The terminal stamp retires the claim's heartbeat in
+    /// a durable transport; the caller cancels its own handle as well.
+    async fn report_unstarted(
+        transport: &dyn WorkerTransport,
+        task_id: String,
+        outcome: TaskOutcome,
+        claim_epoch: agentic_core::delegation::ClaimEpoch,
+    ) {
+        match &outcome {
+            TaskOutcome::Failed(msg) => tracing::error!(
+                target: "worker", task_id = %task_id, error = %msg,
+                "executor failed to start task"
+            ),
+            _ => tracing::info!(
+                target: "worker", task_id = %task_id,
+                "task stopped before it started"
+            ),
+        }
+        let msg = WorkerMessage::Outcome {
+            task_id: task_id.clone(),
+            outcome,
+            claim_epoch,
+        };
+        if let Err(e) = transport.send(msg).await {
+            tracing::error!(
+                target: "worker", rule = "dropped-outcome", task_id = %task_id, error = %e,
+                "failed to deliver outcome to the coordinator"
+            );
+        }
     }
 }
 

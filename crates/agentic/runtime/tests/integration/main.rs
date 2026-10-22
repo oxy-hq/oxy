@@ -22,5 +22,6 @@ mod stale_run_cleanup_test;
 mod stop_and_heartbeat_test;
 mod stuck_run_sweeper_test;
 mod suspension_clock_test;
+mod task_end_reaches_run_test;
 mod tls_smoke_test;
 mod unclaimed_clock_test;

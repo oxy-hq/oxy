@@ -615,32 +615,6 @@ pub async fn retire_run(db: &DatabaseConnection, run_id: &str, reason: &str) -> 
     retire_run_with_message(db, run_id, &format!("recovery failed: {reason}")).await
 }
 
-/// Retire the run owning a task that was **dead-lettered** by the queue.
-///
-/// [`super::queue::defer_task`] moves a row to `dead` once it has waited past
-/// its domain's ceiling, and until this existed that was the end of it: the
-/// queue row went terminal, an ERROR line was logged, and the RUN stayed
-/// `running` for ever. Nothing alerts on a run that reads `running`, and
-/// `find_pending_global_runs` requires a `queued` row, so nothing selected it
-/// again either — a customer's daily load could stop permanently while every
-/// surface reported it as in flight. That is the shape the ceiling exists to
-/// prevent, and the ceiling could not do it alone.
-///
-/// The message is the operator's only account of what happened, so it carries
-/// the domain's own deferral reason rather than a generic "timed out".
-pub async fn dead_letter_run(
-    db: &DatabaseConnection,
-    run_id: &str,
-    reason: &str,
-) -> Result<(), DbErr> {
-    retire_run_with_message(
-        db,
-        run_id,
-        &format!("dead-lettered after waiting past its queue ceiling: {reason}"),
-    )
-    .await
-}
-
 /// Finish a root run whose work completed but whose `Done` outcome was lost.
 /// Returns whether the run was changed.
 ///
@@ -743,8 +717,8 @@ pub async fn owning_run_id(
     .map(|r| r.id))
 }
 
-/// The shared body of [`retire_run`] and [`dead_letter_run`]: both writes in
-/// one transaction, with the caller supplying the whole `error_message`.
+/// The body of [`retire_run`]: both writes in one transaction, with the
+/// caller supplying the whole `error_message`.
 async fn retire_run_with_message(
     db: &DatabaseConnection,
     run_id: &str,
