@@ -660,6 +660,12 @@ pub async fn cli(
     let args = Args::parse();
     install_panic_hook();
 
+    // Register the application's managed-connection resolver with oxy core
+    // before any subcommand can build an `airhouse_managed` / `postgres_managed`
+    // connector. Core resolves those through the port (it no longer depends on
+    // `airhouse` / `oxy-oltp` directly); this is where oxy-app wires the impl.
+    crate::managed_connection_resolver::install();
+
     // Add breadcrumb for CLI command
     if let Some(ref command) = args.command {
         let command_name = match command {

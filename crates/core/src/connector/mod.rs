@@ -34,6 +34,7 @@ pub use duckdb::{
 };
 mod duckdb_pool;
 mod engine;
+pub mod managed;
 mod motherduck;
 mod snowflake;
 mod utils;
@@ -41,6 +42,9 @@ mod utils;
 pub use connection_string::{
     ConnectionStringError, ConnectionStringFormatter, ConnectionStringParser,
     PostgresConnectionString,
+};
+pub use managed::{
+    ManagedConnectionResolver, managed_connection_resolver, set_managed_connection_resolver,
 };
 pub use utils::{load_result, write_to_ipc};
 
@@ -131,8 +135,9 @@ impl Connector {
     /// All other backends ignore them.
     ///
     /// `effective_role` is the user's resolved workspace role. Only
-    /// consulted by the `airhouse_managed` arm: it picks the airhouse role
-    /// for the minted credential via [`airhouse::airhouse_role_for`]
+    /// consulted by the `airhouse_managed` arm: the
+    /// [`ManagedConnectionResolver`](managed::ManagedConnectionResolver) picks
+    /// the airhouse role for the minted credential from it
     /// (Owner→Admin, Admin→Writer, Member/Viewer→Reader). When `None`,
     /// the arm conservatively defaults to **Reader** — meaning any DDL/DML
     /// (`INSERT` / `UPDATE` / `CREATE` / `DROP`) issued through this
@@ -239,22 +244,18 @@ impl Connector {
             }
             DatabaseType::AirhouseManaged(_) => {
                 // `airhouse_managed` mints a fresh ephemeral credential for
-                // every connector build via the SA-backed broker. The
-                // broker needs `(workspace_id, subject)` to key the cache
-                // and pick the right tenant; if either is missing we can't
-                // mint, so refuse with a typed error rather than silently
-                // falling back to a less-privileged path.
+                // every connector build. The mint needs `(workspace_id,
+                // subject)` to key the cache and pick the tenant; if either is
+                // missing we can't mint, so refuse with a typed error rather
+                // than silently falling back to a less-privileged path.
                 //
-                // Role: pick the airhouse role from `effective_role` when
-                // the caller threaded one through (agent / automation runs
-                // entered via authenticated handlers do this), else fall
-                // back to least-privilege Reader. Reader denies DDL/DML at
-                // the database, so write-capable Automation
-                // steps require the caller to populate `effective_role`
-                // — see the doc on `from_db` for how.
-                let airhouse_role = effective_role
-                    .map(airhouse::airhouse_role_for)
-                    .unwrap_or(airhouse::UserRole::Reader);
+                // `effective_role` selects the airhouse role the credential is
+                // minted at (Owner/Admin → write-capable, Member/Viewer →
+                // Reader); `None` is least-privilege Reader, so write-capable
+                // Automation steps must populate it — see the doc on `from_db`.
+                // The role mapping, mint and DSN formatting live behind the
+                // `ManagedConnectionResolver` port (oxy-app owns `airhouse`);
+                // core only wraps the resolved DSN in a ConnectorX.
                 let workspace_id = workspace_id.ok_or_else(|| {
                     OxyError::ConfigurationError(
                         "airhouse_managed requires a workspace context; no workspace_id was \
@@ -272,47 +273,30 @@ impl Connector {
                             .into(),
                     )
                 })?;
-
-                let endpoint = airhouse::wire_endpoint().ok_or_else(|| {
+                let resolver = managed::managed_connection_resolver().ok_or_else(|| {
                     OxyError::ConfigurationError(
-                        "airhouse_managed: AIRHOUSE_WIRE_HOST is not configured; the airhouse \
-                         integration must be enabled (set AIRHOUSE_BASE_URL, \
-                         AIRHOUSE_ADMIN_TOKEN, AIRHOUSE_WIRE_HOST, AIRHOUSE_WIRE_PORT)"
+                        "airhouse_managed: no managed-connection resolver is registered; the \
+                         airhouse integration must be wired at startup (oxy-app registers one; \
+                         this entry point ran without it)."
                             .into(),
                     )
                 })?;
-                let broker = airhouse::token_broker().ok_or_else(|| {
-                    OxyError::ConfigurationError(
-                        "airhouse_managed: token broker not initialised; airhouse env vars \
-                         (AIRHOUSE_BASE_URL / AIRHOUSE_ADMIN_TOKEN / AIRHOUSE_WIRE_HOST) are \
-                         required"
-                            .into(),
-                    )
-                })?;
-                let cred = broker
-                    .mint_for_user(
-                        workspace_id,
-                        subject,
-                        airhouse_role,
-                        airhouse::DEFAULT_INTERNAL_TTL,
-                    )
-                    .await
-                    .map_err(OxyError::from)?;
-                let db_path = format!(
-                    "{}:{}@{}:{}/{}?cxprotocol=cursor",
-                    cred.username, cred.password, endpoint.host, endpoint.port, cred.tenant,
-                );
+                let db_path = resolver
+                    .resolve_airhouse_managed(workspace_id, subject, effective_role)
+                    .await?;
                 EngineType::ConnectorX(ConnectorX::new("postgres".to_string(), db_path, None))
             }
             DatabaseType::PostgresManaged(_) => {
-                // Resolves the per-org OLTP database for the caller's
-                // workspace. Deliberately **ignores `effective_role`**: unlike
-                // `airhouse_managed`, which escalates Owner→admin, this always
-                // yields the read-only analyst. A per-org OLTP database holds a
+                // Resolves the per-org OLTP database for the caller's workspace
+                // as a read-only analyst. Deliberately ignores `effective_role`
+                // (unlike `airhouse_managed`): a per-org OLTP database holds a
                 // customer's live business records, so an ad-hoc UPDATE typed
-                // into the SQL IDE would be a catastrophe rather than a feature.
-                // Writes reach it only through published code — an app function
-                // or an Airway pipeline — via `OltpProvisioner::ensure_writer`.
+                // into the SQL IDE would be a catastrophe, not a feature. Writes
+                // reach OLTP only through published code — an app function or an
+                // Airway pipeline (`OltpProvisioner::ensure_writer`) — never
+                // this path. The analyst lookup and DSN formatting (percent-
+                // encoding, sslmode) live behind the `ManagedConnectionResolver`
+                // port (oxy-app owns `oxy-oltp`); core only wraps the DSN.
                 let workspace_id = workspace_id.ok_or_else(|| {
                     OxyError::ConfigurationError(
                         "postgres_managed requires a workspace context; no workspace_id was \
@@ -321,50 +305,14 @@ impl Connector {
                             .into(),
                     )
                 })?;
-                let db = oxy_platform::db::establish_connection()
-                    .await
-                    .map_err(|e| OxyError::RuntimeError(format!("postgres_managed: {e}")))?;
-                let conn = oxy_oltp::resolver::resolve_analyst_connection(&db, workspace_id)
-                    .await
-                    .map_err(|e| OxyError::ConfigurationError(format!("postgres_managed: {e}")))?;
-                // Both halves matter and both were missing.
-                //
-                // The password is percent-encoded because generated ones always
-                // contain `#` (see `oxy_oltp::roles::generate_password`), which
-                // starts a URI fragment — so this DSN could not authenticate at
-                // all, and an analytics agent reaching Postgres through here via
-                // `execute_sql` never connected.
-                //
-                // TLS mode is carried from the tenant's provider. It stays at
-                // `require`/`disable` and is NOT upgraded to `verify-full` here
-                // (so `conn.verify_tls` is intentionally unread on this path,
-                // though it IS honoured on the two below that build a
-                // `PostgresConnector`), because this path runs through connectorx
-                // 0.4.5, whose `rewrite_tls_args` cannot: its `VerifyCa`/
-                // `VerifyFull` arms are commented out behind a
-                // `panic!("unexpected sslmode")`, and even `Require` verifies
-                // only when an `sslrootcert` FILE is supplied (else
-                // `SslVerifyMode::NONE`).
-                // https://docs.rs/crate/connectorx/0.4.5/source/src/sources/postgres/connection.rs
-                // So `verify-full` here would crash every managed query, not
-                // secure it. `require` therefore ENCRYPTS but does not
-                // authenticate the peer on this path — an accepted gap: the
-                // primary IDE/analytics query path goes through the agentic
-                // `PostgresConnector`, which DOES verify (see `oltp::resolver` /
-                // `verify_tls`). Closing the connectorx gap needs an `sslrootcert`
-                // bundle (verify-ca only) or a newer connectorx, gated on a live
-                // Neon test. Without any sslmode at all libpq defaults to
-                // `prefer`, which downgrades to plaintext silently, so the
-                // explicit `require` still matters.
-                let db_path = format!(
-                    "{}:{}@{}:{}/{}?sslmode={}",
-                    conn.user,
-                    oxy_oltp::roles::encode_userinfo(&conn.password),
-                    conn.host,
-                    conn.port,
-                    conn.database,
-                    conn.sslmode
-                );
+                let resolver = managed::managed_connection_resolver().ok_or_else(|| {
+                    OxyError::ConfigurationError(
+                        "postgres_managed: no managed-connection resolver is registered; the \
+                         oxy-oltp integration must be wired at startup (oxy-app registers one)."
+                            .into(),
+                    )
+                })?;
+                let db_path = resolver.resolve_postgres_managed(workspace_id).await?;
                 EngineType::ConnectorX(ConnectorX::new("postgres".to_string(), db_path, None))
             }
             DatabaseType::Redshift(rs) => {

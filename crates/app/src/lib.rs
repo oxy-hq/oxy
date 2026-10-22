@@ -23,6 +23,7 @@ pub mod airway_boot;
 pub mod cli;
 pub mod emails;
 pub mod integrations;
+pub mod managed_connection_resolver;
 pub mod observability_boot;
 pub mod observability_setup;
 pub mod server;

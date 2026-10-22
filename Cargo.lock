@@ -9124,7 +9124,6 @@ version = "0.5.157"
 dependencies = [
  "aes-gcm",
  "aho-corasick",
- "airhouse",
  "anyhow",
  "arrow 58.3.0",
  "assert_cmd",
@@ -9175,7 +9174,6 @@ dependencies = [
  "oxy-llm",
  "oxy-looker",
  "oxy-observability",
- "oxy-oltp",
  "oxy-platform",
  "oxy-semantic",
  "oxy-shared",
