@@ -21,7 +21,7 @@ pub mod seed;
 mod seed_compile;
 mod seed_llm_keys;
 pub(crate) mod seed_partners;
-mod seed_platform_grants;
+pub(crate) mod seed_platform_grants;
 mod seed_threads;
 pub(crate) mod serve;
 mod start;
@@ -408,6 +408,11 @@ pub struct SeedArgs {
     /// consent. `just up` passes it; the database guard still applies.
     #[clap(long, conflicts_with = "clear")]
     pub llm_keys: bool,
+    /// Also build the demo fixture app (`local/pulse-demo`): five real builds,
+    /// a seven-day release history with the bad release live, seeded traffic
+    /// and a few real runs. Local DB only; `just up` passes it.
+    #[clap(long, conflicts_with = "clear")]
+    pub fixtures: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -1288,6 +1293,7 @@ async fn handle_seed_command(
         let options = SeedOptions {
             compile: !seed_args.no_compile,
             llm_keys: seed_args.llm_keys,
+            fixtures: seed_args.fixtures,
         };
         seed_demo_with(seed_args.workspace_path, options, example_apps).await
     }

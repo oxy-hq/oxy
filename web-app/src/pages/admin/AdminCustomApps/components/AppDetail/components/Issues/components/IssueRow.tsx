@@ -1,4 +1,4 @@
-import { ChevronRight, ClipboardCopy, ListTree } from "lucide-react";
+import { ChartGantt, ChevronRight, ClipboardCopy, ListTree } from "lucide-react";
 import { useId, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
@@ -8,6 +8,7 @@ import { CopyableId } from "@/pages/admin/components/CopyableId";
 import type { AppIssue } from "@/services/api/appIssues";
 import type { CustomApp } from "@/types/apps";
 import { relativeTime } from "../../Activity/relativeTime";
+import { InvocationCalls } from "../../CallWaterfall/InvocationCalls";
 import { describeLastFailure, issueBrief } from "../issueBrief";
 
 /**
@@ -122,6 +123,8 @@ const IssueDetail = ({
   windowDays: number;
   onOpenFunction: (name: string) => void;
 }) => {
+  // The last invocation's ctx calls: which call failed, and how long each took.
+  const [showCalls, setShowCalls] = useState(false);
   const copyBrief = async () => {
     try {
       await navigator.clipboard.writeText(issueBrief(app, issue, windowDays));
@@ -177,6 +180,17 @@ const IssueDetail = ({
           variant='outline'
           size='sm'
           className='h-6 gap-1.5 px-2 text-xs'
+          aria-expanded={showCalls}
+          onClick={() => setShowCalls((was) => !was)}
+          data-testid='admin-app-issues-row-show-calls'
+        >
+          <ChartGantt className='size-3' />
+          {showCalls ? "Hide calls" : "Show calls"}
+        </Button>
+        <Button
+          variant='outline'
+          size='sm'
+          className='h-6 gap-1.5 px-2 text-xs'
           onClick={copyBrief}
           data-testid='admin-app-issues-row-copy'
         >
@@ -184,6 +198,12 @@ const IssueDetail = ({
           Copy for an agent
         </Button>
       </div>
+      {showCalls && (
+        <div className='space-y-1'>
+          <p className='text-muted-foreground'>Calls of the last invocation</p>
+          <InvocationCalls appId={app.id} invocationId={issue.last.invocation_id} />
+        </div>
+      )}
     </div>
   );
 };

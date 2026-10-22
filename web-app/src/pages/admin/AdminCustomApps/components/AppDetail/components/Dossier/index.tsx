@@ -6,6 +6,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger
 } from "@/components/ui/shadcn/collapsible";
+import { cn } from "@/libs/shadcn/utils";
 import type { CustomApp } from "@/types/apps";
 // `AppLogs`, not `Logs`: web-app/.gitignore has a bare `logs` pattern, which
 // git matches case-insensitively on macOS — a directory named `Logs/` is
@@ -24,11 +25,12 @@ import { AppInfo } from "../AppInfo";
 import { AppLogs } from "../AppLogs";
 import { AppSettings } from "../AppSettings";
 import { Availability } from "../Availability";
-import { BuildHistory } from "../BuildHistory";
+import { RetainedBuilds } from "../BuildHistory/RetainedBuilds";
 import { Environments } from "../Environments";
 import { Functions } from "../Functions";
 import { Issues, IssuesBadge } from "../Issues";
 import { Publishers } from "../Publishers";
+import { Releases } from "../Releases";
 import { Secrets, SecretsBadge } from "../Secrets";
 import { DockControls } from "./DockControls";
 import { isSectionOpen } from "./sectionOpen";
@@ -208,10 +210,13 @@ export const DossierBody = ({
         <DossierSection {...section("status")} title='Status & manifest'>
           <AppInfo app={app} />
         </DossierSection>
-        <DossierSection {...section("builds")} title='Live build & history'>
+        {/* The full row once the grid splits: three lanes over a time axis and a
+            per-screen vitals table do not fit a third of the panel. */}
+        <DossierSection {...section("builds")} title='Live build & releases' wide>
           <div className='flex flex-col gap-3 p-4 pt-0'>
             <AppLifecycle app={app} />
-            <BuildHistory appId={app.id} />
+            <Releases app={app} onOpenFunction={openFunction} />
+            <RetainedBuilds appId={app.id} />
           </div>
         </DossierSection>
         <DossierSection {...section("access")} title='Access'>
@@ -283,6 +288,7 @@ const DossierSection = ({
   badge,
   open,
   onOpenChange,
+  wide = false,
   children
 }: {
   /**
@@ -296,13 +302,15 @@ const DossierSection = ({
   badge?: React.ReactNode;
   open: boolean;
   onOpenChange: (next: boolean) => void;
+  /** Spans the grid's full row instead of one column. */
+  wide?: boolean;
   children: React.ReactNode;
 }) => (
   <Collapsible
     open={open}
     onOpenChange={onOpenChange}
     data-testid={`admin-app-dossier-section-${id}`}
-    className='@container min-w-0 border-border/60 border-b'
+    className={cn("@container min-w-0 border-border/60 border-b", wide && "col-span-full")}
   >
     <CollapsibleTrigger className='group flex w-full items-center gap-1.5 px-4 py-2 text-left transition-colors hover:bg-muted/40'>
       <ChevronRight className='size-3 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90' />

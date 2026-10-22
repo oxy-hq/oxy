@@ -1,23 +1,62 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AppFunctionSummary, FunctionInvocation } from "@/types/apps";
+import { ADMIN_TONE } from "@/pages/admin/components/adminTone";
+import type { AppFunctionSummary, FunctionInvocation, InvocationCalls } from "@/types/apps";
 import { FunctionDetail } from "./FunctionDetail";
 
 let invocations: FunctionInvocation[] = [];
+const callsAsked: string[] = [];
 
 // The hooks are the seam: this file is about how one row of history reads, not
 // React Query's plumbing.
 vi.mock("@/hooks/api/customApps/useAppFunctions", () => ({
   useFunctionInvocations: () => ({ isLoading: false, data: invocations }),
   useRunFunction: () => ({ mutate: vi.fn(), isPending: false }),
-  useFunctionRun: () => ({ data: undefined })
+  useFunctionRun: () => ({ data: undefined }),
+  useInvocationCalls: (_app: string, invocationId: string) => {
+    callsAsked.push(invocationId);
+    return { isPending: false, isError: false, data: TRACE };
+  }
 }));
+
+const TRACE: InvocationCalls = {
+  invocation_id: "iv-1",
+  function: "sync-orders",
+  environment: "production",
+  build_id: "b-1",
+  mode: "route",
+  status: "success",
+  failed: false,
+  duration_ms: 120,
+  created_at: "2026-09-20T10:00:00Z",
+  recorded: true,
+  reason: null,
+  init_ms: 20,
+  total_calls: 1,
+  dropped: 0,
+  unfinished: 0,
+  retention_days: 3,
+  calls: [
+    {
+      seq: 0,
+      op: "query",
+      family: "query",
+      start_ms: 25,
+      duration_ms: 80,
+      status: "ok",
+      verb: "SELECT",
+      target: "orders",
+      rows: 3
+    }
+  ]
+};
 
 afterEach(() => {
   cleanup();
   invocations = [];
+  callsAsked.length = 0;
 });
 
 const FN: AppFunctionSummary = {
@@ -62,8 +101,8 @@ describe("invocation history status", () => {
     showRow(invocation({ failed: true, result_status: 500 }));
     const label = screen.getByText("failed · 500");
     expect(label.getAttribute("title")).toBe(HINT);
-    expect(label.classList.contains("text-destructive")).toBe(true);
-    expect(label.classList.contains("text-success")).toBe(false);
+    expect(label.classList.contains(ADMIN_TONE.danger.text)).toBe(true);
+    expect(label.classList.contains(ADMIN_TONE.ok.text)).toBe(false);
     expect(screen.queryByText("success")).toBeNull();
   });
 
@@ -75,14 +114,41 @@ describe("invocation history status", () => {
   it("leaves a clean success green", () => {
     showRow(invocation({ failed: false }));
     const label = screen.getByText("success");
-    expect(label.classList.contains("text-success")).toBe(true);
+    expect(label.classList.contains(ADMIN_TONE.ok.text)).toBe(true);
     expect(label.hasAttribute("title")).toBe(false);
   });
 
   it("leaves an error as it was", () => {
     showRow(invocation({ status: "error", failed: true, error: "function threw" }));
     const label = screen.getByText("error");
-    expect(label.classList.contains("text-destructive")).toBe(true);
+    expect(label.classList.contains(ADMIN_TONE.danger.text)).toBe(true);
     expect(label.hasAttribute("title")).toBe(false);
+  });
+
+  it("mutes a cancel the platform did not count as a failure", () => {
+    showRow(invocation({ status: "cancelled", failed: false }));
+    const label = screen.getByText("cancelled");
+    expect(label.classList.contains(ADMIN_TONE.muted.text)).toBe(true);
+    expect(label.classList.contains(ADMIN_TONE.danger.text)).toBe(false);
+  });
+});
+
+describe("invocation call waterfall", () => {
+  it("opens the row's calls only when toggled, and asks for that invocation", () => {
+    showRow(invocation({ id: "iv-1" }));
+    const toggle = screen.getByTestId("admin-app-invocation-toggle");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("admin-app-invocation-calls")).toBeNull();
+    expect(callsAsked).toEqual([]);
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByTestId("admin-app-invocation-calls")).toBeTruthy();
+    expect(callsAsked).toContain("iv-1");
+    const rows = screen.getAllByTestId("admin-app-invocation-calls-row");
+    expect(rows.map((r) => r.getAttribute("data-op"))).toEqual(["query"]);
+
+    fireEvent.click(toggle);
+    expect(screen.queryByTestId("admin-app-invocation-calls")).toBeNull();
   });
 });

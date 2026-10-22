@@ -57,6 +57,9 @@ pub struct SeedOptions {
     /// environment into its secrets store (`--llm-keys`; local DB only, never
     /// overwriting).
     pub llm_keys: bool,
+    /// Build the demo fixture app after the compile (`--fixtures`; local DB
+    /// only). `ExampleAppsSeam::fixtures`.
+    pub fixtures: bool,
 }
 
 /// Seed rows only — the fixture integration tests drive. See [`seed_demo_with`].
@@ -64,6 +67,7 @@ pub async fn seed_demo(workspace_path: Option<PathBuf>) -> Result<(), OxyError> 
     let rows_only = SeedOptions {
         compile: false,
         llm_keys: false,
+        fixtures: false,
     };
     seed_demo_with(workspace_path, rows_only, None).await
 }
@@ -99,6 +103,14 @@ pub async fn seed_demo_with(
         if options.compile {
             compiled = super::seed_compile::compile_seeded(&targets).await;
         }
+    }
+
+    // After the compile: the fixture's queued runs query the demo workspace.
+    if options.fixtures
+        && let Some(apps) = example_apps
+    {
+        let servable = options.compile && compiled.is_ok();
+        (apps.fixtures)(&conn, workspace_id, servable).await;
     }
 
     print_next_steps(options.compile, workspace_id, &resolved_str);

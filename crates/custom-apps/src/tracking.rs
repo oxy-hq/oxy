@@ -363,7 +363,8 @@ pub async fn retention_cleanup(db: &DatabaseConnection) -> Result<(u64, u64), se
 }
 
 /// Spawn a background task that runs [`retention_cleanup`] every 6
-/// hours so the 90-day TTL is actually enforced. Called once from
+/// hours so the 90-day TTL is actually enforced, and with it the function
+/// call-trace prune (`call_trace_store::prune_expired`, a 3-day window). Called once from
 /// `serve::start_server_and_web_app` at startup — mirrors how the
 /// observability crate spawns its own retention task.
 ///
@@ -412,6 +413,18 @@ pub fn spawn_retention_cleanup() {
                 }
                 Err(e) => {
                     tracing::warn!("custom-app retention cleanup: delete failed: {e}");
+                }
+            }
+            // Function call traces ride the same loop, on their own (much
+            // shorter) window: `call_trace_store::retention_days`.
+            match crate::call_trace_store::prune_expired(&db).await {
+                Ok(0) => {}
+                Ok(n) => tracing::info!(
+                    "custom-app retention cleanup: purged {n} function call traces older than {}d",
+                    crate::call_trace_store::retention_days()
+                ),
+                Err(e) => {
+                    tracing::warn!("custom-app retention cleanup: call trace prune failed: {e}")
                 }
             }
         }

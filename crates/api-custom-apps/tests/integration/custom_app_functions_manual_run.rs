@@ -31,7 +31,7 @@
 //! invocation id, and the fixture the read-backs share), `build_handshake`
 //! (`x-oxy-live-build` and the stale-caller 409), `invocation_listings`,
 //! `invocation_reach`, `sandbox_build_reach`, `agent_draft_build_reach`,
-//! `held_readback`, `run_readback` and `log_reads`;
+//! `held_readback`, `call_trace_readback`, `run_readback` and `log_reads`;
 //! `publish_token_router` (a real token through real authentication),
 //! `run_stream_scope` (a custom app's own run stream and cancel) and
 //! `partner_audit` (what a partner reads of the audit trail). They hang here
@@ -41,6 +41,7 @@
 
 mod agent_draft_build_reach;
 mod build_handshake;
+mod call_trace_readback;
 mod callers;
 mod environment_checks;
 mod environment_refusals;
@@ -75,7 +76,8 @@ use axum::routing::{get, post};
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use oxy::config::OnMissing;
 use oxy_api_custom_apps::admin::apps::{
-    functions as admin_functions, guarded, handlers, held_writes, invocations as admin_invocations,
+    functions as admin_functions, guarded, handlers, held_writes, invocation_calls,
+    invocations as admin_invocations,
 };
 use oxy_api_custom_apps::app_function_executor::{APP_FUNCTION_KIND, AppFunctionTaskExecutor};
 use oxy_app::surface::testing::agentic_wiring::OxyProjectContext;
@@ -125,6 +127,8 @@ pub(crate) const FUNCTION_INVOCATIONS_ROUTE: &str = "/{id}/functions/{name}/invo
 /// The app-wide invocation listing and one invocation's held list.
 pub(crate) const INVOCATIONS_ROUTE: &str = "/{id}/invocations";
 pub(crate) const HELD_ROUTE: &str = "/{id}/invocations/{invocation_id}/held";
+/// One invocation's call trace: the console's waterfall.
+pub(crate) const CALLS_ROUTE: &str = "/{id}/invocations/{invocation_id}/calls";
 
 fn admin_router() -> Router {
     guarded_admin().layer(middleware::from_fn_with_state(
@@ -192,7 +196,8 @@ fn guarded_admin() -> Router {
                 INVOCATIONS_ROUTE,
                 get(admin_invocations::list_app_invocations),
             )
-            .route(HELD_ROUTE, get(held_writes::get_held_writes)),
+            .route(HELD_ROUTE, get(held_writes::get_held_writes))
+            .route(CALLS_ROUTE, get(invocation_calls::get_invocation_calls)),
     );
     Router::new().nest("/api/customer-apps", apps)
 }

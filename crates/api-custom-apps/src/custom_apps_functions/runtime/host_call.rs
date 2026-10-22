@@ -13,6 +13,7 @@ use super::super::env_policy::{Decision, Family, HeldTarget, HoldBy, HostOp, Ver
 use super::super::host_error::HostError;
 use super::FunctionHost;
 use super::ops::HostReply;
+use crate::custom_apps_call_trace::CallStatus;
 
 /// A request the isolate sends to the broker loop.
 pub(super) enum HostCall {
@@ -364,45 +365,89 @@ async fn admit_by_environment(
     })
 }
 
-/// Record how a host op ended on the current span: an `error.type` facet on
-/// failure, rows / truncation for a query, the upstream status for a fetch.
-pub(super) fn record_host_call_outcome(
+/// How a host op ended, read once from its result: what the op's span
+/// records and what its trace record keeps (`oxy_custom_apps::call_trace`),
+/// so the two cannot disagree.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct Facets {
+    pub status: CallStatus,
+    /// The fixed `error.type` facet, never the message.
+    pub error_type: Option<&'static str>,
+    pub rows: Option<u64>,
+    pub rows_truncated: Option<bool>,
+    pub http_status: Option<u16>,
+}
+
+/// The facets of `result`: an `error.type` on failure (`held` / `refused`
+/// when the environment's policy decided it), rows / truncation for a query,
+/// the upstream status for a fetch — a 5xx is an `upstream_5xx` error.
+pub(super) fn outcome_facets(
     kind: HostCallKind,
     result: &Result<serde_json::Value, HostError>,
     environment_labels: bool,
-) {
+) -> Facets {
     use super::super::host_call_attrs::{fetch_status, rows_and_truncated};
     use super::super::host_error_class::classify_host_error_typed;
-    let span = tracing::Span::current();
-    match result {
+    let value = match result {
         Err(error) => {
-            span.record("otel.status_code", "ERROR");
-            span.record(
-                "error.type",
-                classify_host_error_typed(error, environment_labels),
-            );
+            let error_type = classify_host_error_typed(error, environment_labels);
+            let status = match error_type {
+                "held" => CallStatus::Held,
+                "refused" => CallStatus::Refused,
+                _ => CallStatus::Error,
+            };
+            return Facets {
+                status,
+                error_type: Some(error_type),
+                ..Facets::default()
+            };
         }
-        Ok(value) => match kind {
-            HostCallKind::Query => {
-                let (rows, truncated) = rows_and_truncated(value);
-                if let Some(rows) = rows {
-                    span.record("db.response.returned_rows", rows);
-                }
-                if let Some(truncated) = truncated {
-                    span.record("oxy.truncated", truncated);
-                }
+        Ok(value) => value,
+    };
+    match kind {
+        HostCallKind::Query => {
+            let (rows, rows_truncated) = rows_and_truncated(value);
+            Facets {
+                rows,
+                rows_truncated,
+                ..Facets::default()
             }
-            HostCallKind::Fetch => {
-                if let Some(status) = fetch_status(value) {
-                    span.record("http.response.status_code", status);
-                    if status >= 500 {
-                        span.record("otel.status_code", "ERROR");
-                        span.record("error.type", "upstream_5xx");
-                    }
-                }
+        }
+        HostCallKind::Fetch => {
+            let http_status = fetch_status(value).and_then(|s| u16::try_from(s).ok());
+            let failed = http_status.is_some_and(|s| s >= 500);
+            Facets {
+                status: if failed {
+                    CallStatus::Error
+                } else {
+                    CallStatus::Ok
+                },
+                error_type: failed.then_some("upstream_5xx"),
+                http_status,
+                ..Facets::default()
             }
-            HostCallKind::Other => {}
-        },
+        }
+        HostCallKind::Other => Facets::default(),
+    }
+}
+
+/// Record `facets` on the current span: `otel.status_code` and `error.type`
+/// for a call that did not succeed, and the rows, truncation and upstream
+/// status it returned.
+pub(super) fn record_host_call_outcome(facets: &Facets) {
+    let span = tracing::Span::current();
+    if let Some(error_type) = facets.error_type {
+        span.record("otel.status_code", "ERROR");
+        span.record("error.type", error_type);
+    }
+    if let Some(rows) = facets.rows {
+        span.record("db.response.returned_rows", rows);
+    }
+    if let Some(truncated) = facets.rows_truncated {
+        span.record("oxy.truncated", truncated);
+    }
+    if let Some(status) = facets.http_status {
+        span.record("http.response.status_code", u64::from(status));
     }
 }
 
@@ -410,85 +455,8 @@ pub(super) fn record_host_call_outcome(
 mod tests {
     use tokio::sync::oneshot;
 
+    use super::super::test_calls::sample;
     use super::*;
-
-    /// A call of each op, with the arguments its span reads.
-    fn sample(op: HostOp) -> HostCall {
-        let (reply, _rx) = oneshot::channel();
-        let sub = op.sub_name().unwrap_or_default().to_string();
-        let payload = serde_json::json!({});
-        match op.family() {
-            Family::Query => HostCall::Query {
-                sql: "select 1".into(),
-                reply,
-            },
-            Family::QueryStream => HostCall::QueryStream {
-                sql: "select 1".into(),
-                reply,
-            },
-            Family::Fetch => HostCall::Fetch {
-                url: "https://x.example".into(),
-                init: payload,
-                reply,
-            },
-            Family::Semantic => HostCall::SemanticQuery {
-                spec: payload,
-                reply,
-            },
-            Family::Airway => HostCall::AirwayRun {
-                pipeline_ref: "p".into(),
-                variables: payload,
-                reply,
-            },
-            Family::Warehouse => HostCall::WarehouseWrite {
-                op: sub,
-                payload,
-                reply,
-            },
-            Family::Tx => HostCall::Tx {
-                op: sub,
-                payload,
-                reply,
-            },
-            Family::Oltp => HostCall::Oltp {
-                op: sub,
-                payload,
-                reply,
-            },
-            Family::Airhouse => HostCall::Airhouse {
-                op: sub,
-                payload,
-                reply,
-            },
-            Family::Storage => HostCall::Storage {
-                op: sub,
-                payload,
-                reply,
-            },
-            Family::Secrets => HostCall::SecretsSet {
-                key: "K".into(),
-                value: "v".into(),
-                reply,
-            },
-            Family::Email => HostCall::SendEmail {
-                input: payload,
-                reply,
-            },
-            Family::Notify => HostCall::Notify {
-                input: payload,
-                reply,
-            },
-            Family::Org => match op {
-                HostOp::OrgPeople => HostCall::OrgPeople { reply },
-                HostOp::OrgPlaces => HostCall::OrgPlaces { reply },
-                _ => HostCall::OrgAssignments { reply },
-            },
-            Family::Platform => HostCall::PlatformFacts {
-                opts: payload,
-                reply,
-            },
-        }
-    }
 
     /// Every registry op arrives as one call, and the broker names it by the
     /// registry — so `HOST_OPS` is what `host_call_span` returns, and nothing

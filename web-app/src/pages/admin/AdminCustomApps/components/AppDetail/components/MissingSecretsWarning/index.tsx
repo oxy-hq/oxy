@@ -10,9 +10,10 @@ import { environmentLabel } from "../Secrets/environmentLabel";
  * be set, or the code may cope without it — but a promote that silently ships a
  * webhook answering 401 to every delivery is the failure this exists to name.
  *
- * The console's promote does not refuse it; `oxyc promote` does
- * (`required_secrets_unset`, a promote blocker that a rollback only warns
- * about), so a promote says so and a rollback does not.
+ * Said where no plan is read: a first publish. The
+ * console's Promote draft and Roll back confirm on the move's plan instead, where
+ * `required_secrets_unset` blocks a promote (as it refuses `oxyc promote`) and a
+ * rollback only warns.
  *
  * Reconciled server-side (`GET …/secrets?build=`) against the build being
  * promoted, not the one live now: the new build is what may declare a new key.

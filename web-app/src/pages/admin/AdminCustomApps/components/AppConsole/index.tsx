@@ -9,10 +9,11 @@ import { Activity } from "../AppDetail/components/Activity";
 import { AppAccessPane } from "../AppDetail/components/AppAccessPane";
 import { AppInfo } from "../AppDetail/components/AppInfo";
 import { Availability } from "../AppDetail/components/Availability";
-import { BuildHistory } from "../AppDetail/components/BuildHistory";
+import { RetainedBuilds } from "../AppDetail/components/BuildHistory/RetainedBuilds";
 import { Environments } from "../AppDetail/components/Environments";
 import { Functions } from "../AppDetail/components/Functions";
 import { Publishers } from "../AppDetail/components/Publishers";
+import { Releases } from "../AppDetail/components/Releases";
 import { Secrets } from "../AppDetail/components/Secrets";
 import { useAppViewState } from "../AppDetail/useAppViewState";
 import { AppIdentity } from "../AppIdentity";
@@ -137,15 +138,18 @@ export const AppConsole = ({ app }: { app: CustomApp }) => {
 
             <ConsolePanel
               id='build'
-              title='Live build & history'
+              title='Live build & releases'
               question='Q2 / Q3 — what is deployed, ship or roll back'
             >
-              {/* The card answers both questions and owns every verb — promote, roll
-                  back, unpublish. The history below it is the list those verbs choose
-                  from, and nothing on it acts. */}
+              {/* The card answers both questions and owns its verbs — promote, roll back
+                  to any build, unpublish. The release timeline under it says whether the
+                  last release made things worse, and rolls back a red one through the
+                  same plan. The retained-build ledger is the list the card's rollback
+                  chooses from, behind a disclosure. */}
               <div className='flex flex-col gap-3'>
                 <AppLifecycle app={app} />
-                <BuildHistory appId={app.id} />
+                <Releases app={app} onOpenFunction={(name) => patch({ fn: name })} />
+                <RetainedBuilds appId={app.id} />
               </div>
             </ConsolePanel>
 

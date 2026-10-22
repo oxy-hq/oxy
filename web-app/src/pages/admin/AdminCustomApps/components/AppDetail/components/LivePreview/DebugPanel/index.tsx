@@ -18,13 +18,16 @@ export const DebugPanel = ({
   onClear,
   open,
   onToggle,
-  available
+  available,
+  appId
 }: {
   entries: OxyRequestEntry[];
   onClear: () => void;
   open: boolean;
   onToggle: () => void;
   available: boolean;
+  /** The previewed app: a function call's detail opens its invocation's calls. */
+  appId?: string;
 }) => {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const selected = entries.find((e) => e.id === selectedId) ?? null;
@@ -98,7 +101,7 @@ export const DebugPanel = ({
       {entries.length === 0 ? (
         <div className='flex flex-1 items-center justify-center px-4 text-center text-muted-foreground text-xs'>
           No requests yet. Interact with the app — its calls to{" "}
-          <span className='font-mono'>/api/*</span> will appear here.
+          <span className='font-mono'>/api/*</span> and its functions will appear here.
         </div>
       ) : (
         <div className='flex min-h-0 flex-1'>
@@ -122,6 +125,7 @@ export const DebugPanel = ({
           {selected && (
             <RequestDetail
               entry={selected}
+              appId={appId}
               onClose={() => setSelectedId(null)}
               className='min-h-0 flex-1'
             />

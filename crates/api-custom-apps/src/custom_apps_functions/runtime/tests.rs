@@ -179,6 +179,8 @@ struct MockHost {
     query_error_once: bool,
     /// How many `ctx.query` calls have reached the host.
     query_calls: std::sync::atomic::AtomicUsize,
+    /// When set, `ctx.query` takes this long to answer.
+    query_delay: Option<std::time::Duration>,
     /// When set, the app's own stores fail with this message: every
     /// `ctx.airhouse` op, and the `begin_oltp` that opens `ctx.oltp.tx`.
     own_store_error: Option<String>,
@@ -272,6 +274,9 @@ impl FunctionHost for MockHost {
         let calls_before = self
             .query_calls
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if let Some(delay) = self.query_delay {
+            tokio::time::sleep(delay).await;
+        }
         if let Some(message) = &self.query_error
             && !(self.query_error_once && calls_before > 0)
         {
@@ -1956,3 +1961,7 @@ fn an_op_with_no_invocation_bound_is_refused_not_panicked() {
     let refusal = super::ops::host_sender_of(None).err().expect("refused");
     assert_eq!(refusal.to_string(), "function host unavailable");
 }
+
+/// Each call's trace record, from a real run against this file's host.
+#[path = "call_trace_tests.rs"]
+mod call_trace_tests;

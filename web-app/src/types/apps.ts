@@ -317,6 +317,66 @@ export interface FunctionInvocation {
   has_result: boolean;
 }
 
+/** What one `ctx.*` call of an invocation did, as the host recorded it: the
+ *  registry op, when it started and how long it took (from the invocation's
+ *  start), and the shape facets its platform span carries. Never SQL, values,
+ *  URL paths, bodies or messages. Optional facets are omitted when absent. */
+export interface InvocationCall {
+  seq: number;
+  /** Registry op name (`query`, `storage.put`, `oltp.exec`, …) or `<family>.other`. */
+  op: string;
+  /** `query` | `query_stream` | `fetch` | `semantic` | `airway` | `warehouse` |
+   *  `secrets` | `email` | `notify` | `storage` | `org` | `platform` | `tx` |
+   *  `oltp` | `airhouse`. */
+  family: string;
+  start_ms: number;
+  duration_ms: number;
+  status: "ok" | "error" | "held" | "refused";
+  /** The fixed failure class (`timeout`, `not_allowed`, `upstream_5xx`, …). */
+  error_type?: string;
+  /** SQL verb for a statement, HTTP method for a fetch. */
+  verb?: string;
+  /** Table, `namespace.table`, a fetch's host, a pipeline or a secret's name. */
+  target?: string;
+  /** Recipients (email), targets (notify) or measures (semantic). */
+  count?: number;
+  rows?: number;
+  rows_truncated?: boolean;
+  http_status?: number;
+}
+
+/** Why an invocation has no call trace to show. */
+export type InvocationCallsReason = "running" | "expired" | "not_recorded" | "did_not_start";
+
+/** One invocation's `ctx.*` call trace.
+ *  See `GET /customer-apps/{id}/invocations/{invocation_id}/calls`. */
+export interface InvocationCalls {
+  invocation_id: string;
+  function: string;
+  environment: string;
+  build_id: string | null;
+  mode: string;
+  status: string;
+  failed: boolean;
+  duration_ms: number | null;
+  created_at: string;
+  recorded: boolean;
+  /** `null` when `recorded`. */
+  reason: InvocationCallsReason | null;
+  /** Isolate start-up before tenant code ran; `null` when it never did. */
+  init_ms: number | null;
+  /** Every call the invocation made, kept or not. */
+  total_calls: number;
+  /** Calls past the cap (the first 200 to start are kept). */
+  dropped: number;
+  /** Kept calls still in flight when the invocation ended. */
+  unfinished: number;
+  /** How long a trace is kept. */
+  retention_days: number;
+  /** Sorted by `(start_ms, seq)`. */
+  calls: InvocationCall[];
+}
+
 /** A function-job run's status + persisted logs, for the trigger-and-watch loop.
  *  See `GET /customer-apps/{id}/function-runs/{run_id}`. */
 export interface FunctionRunDetail {

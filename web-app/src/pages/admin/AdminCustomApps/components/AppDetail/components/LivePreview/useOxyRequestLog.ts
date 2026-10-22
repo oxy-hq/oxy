@@ -35,8 +35,8 @@ const MAX_BODY = 100_000;
 /**
  * Capture the custom-app preview's requests to oxy by instrumenting the
  * (same-origin) iframe's `fetch` + `XMLHttpRequest` on each load. We only
- * record calls whose URL contains `/api/` (the oxy API surface) — asset
- * fetches are noise. Pure client-side: no SDK or server changes, works for
+ * record calls whose URL contains `/api/` (the oxy API surface) or names one
+ * of the app's functions (`…/fn/<name>`) — asset fetches are noise. Pure client-side: no SDK or server changes, works for
  * any previewed build.
  *
  * Each entry carries enough to inspect the call the way DevTools would:
@@ -101,6 +101,37 @@ interface Sink {
 
 function isApiUrl(url: string): boolean {
   return url.includes(API_MARKER);
+}
+
+/** A call to one of the app's Oxy Functions: `/customer-apps/<org>/<app>/fn/<name>`
+ *  (what the SDK's `useFunction` posts to). Not under `/api/`, so matched on its
+ *  own; the app's other paths (assets, pages) stay out of the log. */
+const FUNCTION_CALL = /\/customer-apps\/[^/?#]+\/[^/?#]+\/fn\/[^/?#]+/;
+
+export function isFunctionCallUrl(url: string): boolean {
+  let path = url;
+  try {
+    path = new URL(url, "http://x").pathname;
+  } catch {
+    // keep the raw string
+  }
+  return FUNCTION_CALL.test(path);
+}
+
+/** What the log records: oxy's API, and the app's function calls. */
+export function isCapturedUrl(url: string): boolean {
+  return isApiUrl(url) || isFunctionCallUrl(url);
+}
+
+/** The invocation a function call's answer names (`x-oxy-invocation-id`).
+ *  Absent on a result-cache hit and on a refusal before the run started. */
+export function invocationIdOf(entry: Pick<OxyRequestEntry, "resHeaders">): string | undefined {
+  const headers = entry.resHeaders;
+  if (!headers) return undefined;
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === "x-oxy-invocation-id" && value) return value;
+  }
+  return undefined;
 }
 
 function toPath(url: string, base: string): string {
@@ -185,7 +216,7 @@ function instrumentFetch(win: Window & typeof globalThis, sink: Sink) {
       "GET"
     ).toUpperCase();
 
-    if (!isApiUrl(url)) return orig(input as RequestInfo, init);
+    if (!isCapturedUrl(url)) return orig(input as RequestInfo, init);
 
     const id = sink.nextId();
     const t0 = performance.now();
@@ -280,7 +311,7 @@ function instrumentXhr(win: Window & typeof globalThis, sink: Sink) {
   };
   proto.send = function (this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit | null) {
     const meta = (this as unknown as Record<string, unknown>).__oxyReq as XhrMeta | undefined;
-    if (meta && isApiUrl(meta.url)) {
+    if (meta && isCapturedUrl(meta.url)) {
       const id = sink.nextId();
       const t0 = performance.now();
       const reqBody = clipBody(serializeReqBody(body as BodyInit | null | undefined));

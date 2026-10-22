@@ -3,27 +3,37 @@ import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import type { AppLifecycle as Lifecycle } from "@/hooks/api/customApps/deriveLifecycle";
 import { useAppLifecycle } from "@/hooks/api/customApps/useAppLifecycle";
 import { useMissingSecretsForBuild } from "@/hooks/api/customApps/useAppSecrets";
+import { useMovePlan } from "@/hooks/api/customApps/useProductionMove";
 import type { AppAccessSummary } from "@/types/appAccess";
+import type { MoveTarget } from "@/types/appPromote";
 import type { CustomApp } from "@/types/apps";
 import { lifecycleVerdict } from "../../appStatus";
 import { MissingSecretsWarning } from "../AppDetail/components/MissingSecretsWarning";
 import { useAdminLifecycleActions, usePartnerLifecycleActions } from "./actions";
-import { LifecycleCard, type LifecycleTarget, type LifecycleVariant } from "./LifecycleCard";
+import {
+  LifecycleCard,
+  type LifecyclePreflight,
+  type LifecycleTarget,
+  type LifecycleVariant
+} from "./LifecycleCard";
+import { movePreflight } from "./movePreflight";
 
 export { LifecycleCard } from "./LifecycleCard";
 export { LifecycleConfirm } from "./LifecycleConfirm";
 export { LifecycleVerdictPill } from "./LifecycleVerdictPill";
 export { LIFECYCLE_COPY } from "./lifecycleCopy";
+export { PlannedMoveConfirm } from "./PlannedMoveConfirm";
 
 /**
  * The card on a staff surface: the console, the dossier, the settings panel.
  * Reads through `useAppLifecycle` (shared cache with every other panel) and acts
  * through the admin `/customer-apps/{id}/*` mutations.
  *
- * Its confirm also names the `required` secrets the build about to go live declares
- * and production has no value for (`GET …/secrets?build=`), and holds the verb until
- * that check has answered. A warning here, not a refusal: the console's promote and
- * rollback do not block on it — only `oxyc promote` does.
+ * Promote draft and roll back confirm on the move's dry-run plan — the one
+ * `oxyc promote --dry-run` prints — and act on that plan: a blocker holds the verb,
+ * as it refuses `oxyc promote`, and a schedule the plan retires is named in the
+ * confirm and confirmed by it. A first publish still says only which `required`
+ * secrets production lacks (`GET …/secrets?build=`), and waits for that answer.
  */
 export const AppLifecycle = ({
   app,
@@ -35,10 +45,19 @@ export const AppLifecycle = ({
   className?: string;
 }) => {
   const lifecycle = useAppLifecycle(app);
-  const actions = useAdminLifecycleActions(app.id);
   const [target, setTarget] = useState<LifecycleTarget | null>(null);
-  // The warning's own query (same key, so one request): the confirm waits for it.
-  const secretsCheck = useMissingSecretsForBuild(app.id, target?.buildId);
+  const move: MoveTarget | null =
+    target && target.act !== "publish" ? { act: target.act, buildId: target.buildId } : null;
+  const plan = useMovePlan(app.id, move);
+  const actions = useAdminLifecycleActions(
+    app.id,
+    move && plan.data ? { target: move, plan: plan.data } : undefined
+  );
+  // The warning's own query (same key, so one request): a first publish waits for it.
+  const secretsCheck = useMissingSecretsForBuild(
+    app.id,
+    target?.act === "publish" ? target.buildId : undefined
+  );
 
   if (lifecycle.isLoading) {
     return <Skeleton className='h-24 w-full rounded-lg' data-testid='app-lifecycle-loading' />;
@@ -58,19 +77,27 @@ export const AppLifecycle = ({
       variant={variant}
       className={className}
       onTargetChange={setTarget}
-      preflight={
-        target
-          ? {
-              notice: (
-                <MissingSecretsWarning appId={app.id} buildId={target.buildId} act={target.act} />
-              ),
-              hold: secretsCheck.isLoading
-            }
-          : undefined
-      }
+      preflight={preflightFor(app.id, target, plan, secretsCheck.isLoading)}
     />
   );
 };
+
+/** What the open confirm says, and whether its verb waits. */
+function preflightFor(
+  appId: string,
+  target: LifecycleTarget | null,
+  plan: ReturnType<typeof useMovePlan>,
+  secretsLoading: boolean
+): LifecyclePreflight | undefined {
+  if (!target) return undefined;
+  if (target.act === "publish") {
+    return {
+      notice: <MissingSecretsWarning appId={appId} buildId={target.buildId} act='promote' />,
+      hold: secretsLoading
+    };
+  }
+  return movePreflight(plan);
+}
 
 /**
  * The same card on the partner console, where the backend offers publish /

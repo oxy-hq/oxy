@@ -3,8 +3,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import { useFunctionInvocations, useRunFunction } from "@/hooks/api/customApps/useAppFunctions";
-import { cn } from "@/libs/shadcn/utils";
-import type { AppFunctionSummary, FunctionInvocation } from "@/types/apps";
+import type { AppFunctionSummary } from "@/types/apps";
+import { InvocationRow } from "./InvocationRow";
 import { RunPanel } from "./RunPanel";
 
 /** How many invocations to show before "Show more" (the endpoint returns up to
@@ -95,7 +95,7 @@ export const FunctionDetail = ({ appId, fn }: { appId: string; fn: AppFunctionSu
           <>
             <ul className='flex flex-col'>
               {invocations.data.slice(0, visible).map((iv) => (
-                <InvocationRow key={iv.id} iv={iv} />
+                <InvocationRow key={iv.id} appId={appId} iv={iv} />
               ))}
             </ul>
             {invocations.data.length > visible && (
@@ -147,67 +147,3 @@ const ConfigChips = ({ fn }: { fn: AppFunctionSummary }) => {
     </div>
   );
 };
-
-/** Tooltip on a `success` the platform counted as a failure. */
-const FAILED_SUCCESS_HINT =
-  "Returned without throwing, but the platform counted it as a failure — it answered 5xx or caught a failed ctx call.";
-
-const InvocationRow = ({ iv }: { iv: FunctionInvocation }) => {
-  // A `success` that answered 5xx or caught a failed ctx call is a failure to
-  // the pager; showing it green is how a week of refused writes looked fine.
-  const failedSuccess = iv.status === "success" && iv.failed;
-  const tone = failedSuccess
-    ? "text-destructive"
-    : iv.status === "success"
-      ? "text-success"
-      : iv.status === "running"
-        ? "text-primary"
-        : "text-destructive";
-  return (
-    <li className='flex items-center gap-2 border-border/40 border-b py-1 text-xs last:border-b-0'>
-      {/* Wide enough for "failed · 500", so every row's columns line up. */}
-      <span
-        className={cn("w-20 shrink-0 font-medium", tone)}
-        title={failedSuccess ? FAILED_SUCCESS_HINT : undefined}
-      >
-        {failedSuccess
-          ? `failed${iv.result_status != null ? ` · ${iv.result_status}` : ""}`
-          : iv.status}
-      </span>
-      <span className='w-16 shrink-0 text-muted-foreground'>{iv.mode}</span>
-      <span className='w-14 shrink-0 text-muted-foreground'>
-        {iv.duration_ms != null ? formatMs(iv.duration_ms) : "—"}
-      </span>
-      <span
-        className='shrink-0 text-muted-foreground'
-        title={new Date(iv.created_at).toLocaleString()}
-      >
-        {timeAgo(iv.created_at)}
-      </span>
-      {iv.error && (
-        <span className='truncate text-destructive' title={iv.error}>
-          {iv.error}
-        </span>
-      )}
-    </li>
-  );
-};
-
-const formatMs = (ms: number): string => (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`);
-
-const RTF = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ["day", 86_400_000],
-  ["hour", 3_600_000],
-  ["minute", 60_000],
-  ["second", 1_000]
-];
-function timeAgo(iso: string): string {
-  const ms = new Date(iso).getTime();
-  if (Number.isNaN(ms)) return "";
-  const diff = ms - Date.now();
-  for (const [unit, per] of UNITS) {
-    if (Math.abs(diff) >= per || unit === "second") return RTF.format(Math.round(diff / per), unit);
-  }
-  return "";
-}

@@ -18,6 +18,7 @@ vi.mock("../BuildHistory", () => ({ BuildHistory: () => null }));
 vi.mock("../../../AppLifecycle", () => ({ AppLifecycle: () => null }));
 vi.mock("../Environments", () => ({ Environments: () => null }));
 vi.mock("../Publishers", () => ({ Publishers: () => null }));
+vi.mock("../Releases", () => ({ Releases: () => <div data-testid='admin-app-releases' /> }));
 vi.mock("../Secrets", () => ({ Secrets: () => null, SecretsBadge: () => null }));
 vi.mock("../Functions", () => ({
   Functions: ({ selected }: { selected: string | null }) => (
@@ -69,5 +70,13 @@ describe("DossierBody", () => {
 
     render(<DossierBody app={APP} focusSection='issues' fn={null} />);
     expect(sectionState("issues")).toBe("open");
+  });
+
+  it("puts the release timeline in the builds section, the retained builds behind it", () => {
+    render(<DossierBody app={APP} fn={null} />);
+    const builds = screen.getByTestId("admin-app-dossier-section-builds");
+    expect(builds).toContainElement(screen.getByTestId("admin-app-releases"));
+    expect(builds).toHaveClass("col-span-full");
+    expect(screen.getByTestId("admin-app-retained-builds")).toHaveAttribute("data-state", "closed");
   });
 });

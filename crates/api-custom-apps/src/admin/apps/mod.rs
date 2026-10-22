@@ -24,11 +24,18 @@ pub mod functions;
 pub mod handlers;
 /// The held-write read-back of one non-production invocation.
 pub mod held_writes;
+/// The call trace of one invocation: the console's waterfall.
+pub mod invocation_calls;
+/// The fences the per-invocation read-back routes share.
+mod invocation_read;
 /// The invocation query, its DTO, and the app-wide listing.
 pub mod invocations;
 /// An app's failures grouped per `(function, fingerprint)` — the pager's key.
 pub mod issues;
 mod ops;
+/// Production's releases over a window, each beside the one before it, and
+/// the three environments' pointer moves.
+pub mod releases;
 /// Slug validation, re-exported so the (non-admin) `/publish` route can reject a
 /// slug before it becomes a schema name / path — see `custom_apps_publish`.
 pub(crate) use ops::is_valid_slug;
@@ -136,9 +143,20 @@ fn core_routes() -> Router<AppState> {
             "/{id}/invocations/{invocation_id}/held",
             get(held_writes::get_held_writes),
         )
+        // Every ctx.* call one invocation made, as timed records (the
+        // console's waterfall). A DB read, like its neighbours.
+        .route(
+            "/{id}/invocations/{invocation_id}/calls",
+            get(invocation_calls::get_invocation_calls),
+        )
         // The same failed invocations, one row per distinct failure. Derived
         // on every read, production only — a DB read like its neighbours.
         .route("/{id}/issues", get(issues::list_app_issues))
+        // Production's releases over `?days=`, each with its failure rate, route
+        // p95, Web Vitals per screen and migrations beside the release before it,
+        // and staging's and sandboxes' moves for a caller with non-production
+        // reach. Derived on every read from Postgres — FleetOk.
+        .route("/{id}/releases", get(releases::list_app_releases))
         // Manually trigger a one-off background run of one of the app's Oxy
         // Functions as a job (the "run now" that isn't tied to a cron schedule).
         .route(

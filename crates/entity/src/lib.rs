@@ -77,6 +77,7 @@ pub mod app_email_sends;
 pub mod app_environment_events;
 pub mod app_environment_tails;
 pub mod app_environments;
+pub mod app_function_invocation_calls;
 pub mod app_function_invocations;
 pub mod app_functions;
 pub mod app_members;

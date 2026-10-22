@@ -2,7 +2,8 @@
 # `just up` / `just down` / `just status` — the whole local stack, one idempotent command.
 #
 #   up       `oxy start --enterprise` (Docker Postgres, API :3000, no-auth internal :3001),
-#            `oxy seed` (compiles + promotes every seeded workspace), Vite on 127.0.0.1:5173.
+#            `oxy seed --fixtures` (compiles + promotes every seeded workspace, then builds the
+#            local/pulse-demo fixture app once), Vite on 127.0.0.1:5173.
 #            Reuses whatever is ours and healthy; restarts the backend only when the binary
 #            changed. Writes .oxy-dev/state.json — the file an agent reads next.
 #   down     Stops the backend + Vite this script started. --db also stops the containers.
@@ -300,8 +301,9 @@ seed() {
   log=$(fresh_log seed)
   rset seed.log "$log"
   # --llm-keys: DATABASE_URL is the `oxy start` container, so this box's keys stay on it.
-  note "oxy seed --workspace-path ./examples --llm-keys  (log: $(rel "$log"))"
-  if ! (cd "$REPO" && env -u OXY_ROLE OXY_DATABASE_URL="$DATABASE_URL" "$BIN" seed --workspace-path ./examples --llm-keys) >"$log" 2>&1; then
+  # --fixtures: the pulse-demo fixture app (release history + traffic); a no-op once built.
+  note "oxy seed --workspace-path ./examples --llm-keys --fixtures  (log: $(rel "$log"))"
+  if ! (cd "$REPO" && env -u OXY_ROLE OXY_DATABASE_URL="$DATABASE_URL" "$BIN" seed --workspace-path ./examples --llm-keys --fixtures) >"$log" 2>&1; then
     tail -n 40 "$log" >&2
     die "oxy seed failed — log: $log"
   fi

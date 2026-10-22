@@ -420,6 +420,20 @@ mod tests {
         assert_eq!(events[0].1["path"], "/orders");
     }
 
+    /// The runtime's vitals carry the screen and the build they were measured
+    /// on; the release timeline reads both, so the beacon keeps them as sent.
+    #[test]
+    fn admits_vitals_with_their_screen_and_build() {
+        let build = "6e5e84a2-17f0-4879-8367-19211bd6a51a";
+        let events = batch(&format!(
+            r#"{{"v":1,"events":[{{"n":"oxy-web-vitals","p":{{"lcp":812,"cls":4,"path":"/store","build":"{build}"}}}}]}}"#
+        ))
+        .expect("admitted");
+        assert_eq!(events[0].1["path"], "/store");
+        assert_eq!(events[0].1["build"], build);
+        assert_eq!(events[0].1["lcp"], 812);
+    }
+
     /// The whole reason this route is separate from the SDK's: it must not be
     /// usable to write anything but the platform's own names.
     #[test]

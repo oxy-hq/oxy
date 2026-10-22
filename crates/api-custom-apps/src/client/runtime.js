@@ -327,9 +327,16 @@
   // ── Core Web Vitals ───────────────────────────────────────────────────────
   // Hand-rolled rather than pulled from `web-vitals`: this script is inlined
   // into every HTML response, so its size is paid on every navigation of every
-  // app. The four numbers below are the ones the Activity tab charts, and they
-  // are ~40 lines of PerformanceObserver.
+  // app. The numbers below are the ones the console's release timeline reads
+  // per screen and per build, and they are ~40 lines of PerformanceObserver.
+  //
+  // Sent once per document, at 10 s or on the first hide, so INP and CLS cover
+  // that much of the page's life and no more.
   var vitals = {};
+  // The screen the document landed on, kept before any route change: TTFB,
+  // FCP and LCP belong to it, and the emit runs after the operator may have
+  // moved on. Query and hash already dropped (`currentPath`).
+  var landingPath = lastPath;
   var nav =
     analyticsEnabled &&
     performance.getEntriesByType &&
@@ -371,9 +378,10 @@
     vitals.cls = Math.round(((vitals.cls || 0) / 1000 + entry.value) * 1000);
   });
   observe("event", function (entry) {
-    // INP approximated by the worst interaction latency seen. The real metric
-    // is a high percentile of all interactions; the max is the number that
-    // actually gets acted on, and it needs no client-side histogram.
+    // INP approximated by the worst interaction latency seen before the emit
+    // (the first 10 s, or until the first hide). The real metric is a high
+    // percentile of all interactions; the max is the number that actually gets
+    // acted on, and it needs no client-side histogram.
     var d = Math.round(entry.duration);
     if (!vitals.inp || d > vitals.inp) vitals.inp = d;
   }, { durationThreshold: 40 });
@@ -383,7 +391,12 @@
     if (!analyticsEnabled) return;
     if (vitalsSent) return;
     vitalsSent = true;
-    if (Object.keys(vitals).length) push("oxy-web-vitals", vitals);
+    // `path` and `build` attribute the numbers: which screen, on which build
+    // (`app_builds.id`, as `oxy-app-ready` sends it). Without `build` a reader
+    // could only guess the build from the session, which can span two.
+    if (!Object.keys(vitals).length) return;
+    var attributed = Object.assign({ path: landingPath, build: app.buildId || "" }, vitals);
+    push("oxy-web-vitals", attributed);
   }
 
   // ── errors ────────────────────────────────────────────────────────────────

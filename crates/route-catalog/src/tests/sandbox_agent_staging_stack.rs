@@ -26,10 +26,11 @@ const TOKEN: Uuid = Uuid::from_u128(0x70);
 
 /// Rows a token granted staging also uses on staging: show the environment,
 /// publish a draft, list and run checks, read runs, invocations, held writes
-/// and logs, tail them, and call a function. F1 and L1 are the serve tree's
-/// and the public router's rows, which the allow-list table does not carry.
-const ON_STAGING: [&str; 11] = [
-    "C1", "C2", "C3", "E3", "F1", "L1", "P1", "R1", "R2", "R3", "T1",
+/// and call traces and logs, tail them, and call a function. F1 and L1 are the
+/// serve tree's and the public router's rows, which the allow-list table does
+/// not carry.
+const ON_STAGING: [&str; 12] = [
+    "C1", "C2", "C3", "E3", "F1", "L1", "P1", "R1", "R2", "R3", "R4", "T1",
 ];
 /// Rows that stay a sandbox's alone for every token, by their handler and not
 /// by the model: an environment's secrets.

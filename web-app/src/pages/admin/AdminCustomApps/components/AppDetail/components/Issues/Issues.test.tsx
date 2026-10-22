@@ -12,6 +12,13 @@ vi.mock("@/hooks/api/customApps/useAppIssues", () => ({
   useAppIssues: vi.fn()
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+// The waterfall's own states are `InvocationCalls.test.tsx`'s; here only which
+// invocation an issue row asks it for.
+vi.mock("../CallWaterfall/InvocationCalls", () => ({
+  InvocationCalls: ({ appId, invocationId }: { appId: string; invocationId: string }) => (
+    <div data-testid='admin-app-invocation-calls'>{`${appId}/${invocationId}`}</div>
+  )
+}));
 
 type IssuesQuery = ReturnType<typeof useAppIssues>;
 
@@ -128,6 +135,24 @@ describe("Issues", () => {
     fireEvent.click(screen.getByTestId("admin-app-issues-row-toggle"));
     fireEvent.click(screen.getByTestId("admin-app-issues-row-open-function"));
     expect(onOpenFunction).toHaveBeenCalledWith("upload-report");
+  });
+
+  // The strongest read of an issue: this failure, and which ctx call of its
+  // last invocation failed.
+  it("shows the calls of the issue's last invocation on demand", () => {
+    answerWith({ data: listOf([issue()]) });
+    render(<Issues app={APP} onOpenFunction={vi.fn()} />);
+
+    fireEvent.click(screen.getByTestId("admin-app-issues-row-toggle"));
+    const show = screen.getByTestId("admin-app-issues-row-show-calls");
+    expect(show).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("admin-app-invocation-calls")).not.toBeInTheDocument();
+
+    fireEvent.click(show);
+    expect(show).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("admin-app-invocation-calls")).toHaveTextContent(
+      "app-id/0b7a1c2e-5d3f-4a6b-8c9d-0e1f2a3b4c5d"
+    );
   });
 
   it("copies the issue as a brief an agent can act on", async () => {

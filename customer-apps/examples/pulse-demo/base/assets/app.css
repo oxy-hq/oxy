@@ -1,0 +1,79 @@
+/* Pulse — the demo fixture's page. Dark only, the customer-app house tokens. */
+:root {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --card: #1a1a1a;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --border: rgba(255, 255, 255, 0.145);
+  --brand: #3550ff;
+  --info: #60a5fa;
+  --error: #ef4444;
+  --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+main { max-width: 860px; margin: 0 auto; padding: 48px 16px 96px; }
+code { font-family: var(--mono); font-size: 0.85em; background: var(--muted); padding: 0.05rem 0.3rem; }
+h1 { font-size: 28px; font-weight: 600; margin: 0 0 8px; }
+h2 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  margin: 0 0 12px;
+}
+.lede { color: var(--muted-foreground); margin: 0; max-width: 62ch; }
+.release { font-family: var(--mono); font-size: 12px; color: var(--info); margin: 12px 0 0; }
+
+nav { display: flex; gap: 16px; margin-top: 24px; }
+nav a, section > a { color: var(--info); text-decoration: none; }
+section { margin-top: 32px; }
+section > a { display: inline-block; margin-bottom: 12px; }
+
+.panel { background: var(--card); border: 1px solid var(--border); overflow-x: auto; }
+.state { padding: 14px; color: var(--muted-foreground); }
+.state.error { color: var(--error); white-space: pre-wrap; }
+.footer {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted-foreground);
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+}
+.note { color: var(--muted-foreground); padding: 0 14px; }
+.source {
+  font-family: var(--mono);
+  font-size: 12px;
+  margin: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  border-left: 2px solid var(--brand);
+  white-space: pre-wrap;
+}
+
+table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 12.5px; }
+th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { font-family: var(--sans); font-size: 11px; text-transform: uppercase; color: var(--muted-foreground); }
+td a { color: var(--info); }
+
+.action {
+  margin-top: 12px;
+  font: inherit;
+  color: var(--foreground);
+  background: var(--muted);
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.action:hover { border-color: var(--brand); }

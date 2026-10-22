@@ -1,8 +1,10 @@
+import { useRef } from "react";
 import { toast } from "sonner";
-import { useRollbackApp } from "@/hooks/api/customApps/useAppBuilds";
 import { usePublishApp, useUnpublishApp } from "@/hooks/api/customApps/useCustomApps";
+import { useMoveProduction } from "@/hooks/api/customApps/useProductionMove";
 import { errMessage } from "@/hooks/api/errMessage";
 import { useSetAppPublished } from "@/hooks/api/partners";
+import type { MovePlan, MoveTarget } from "@/types/appPromote";
 import type { AppBuild } from "@/types/apps";
 import { shortBuildId } from "./lifecycleCopy";
 
@@ -20,39 +22,67 @@ export interface LifecycleActions {
   promoteDraft?: () => Promise<void>;
   /** First publish; same endpoint, read differently by an app with nothing live. */
   publish?: () => Promise<void>;
-  /** Move the live pointer to a retained build. */
-  rollbackTo?: (build: AppBuild) => Promise<void>;
+  /** Move the live pointer to a retained build. Only its `app_builds.id` is read, so
+   *  a surface holding no `AppBuild` (the release timeline) names the id alone. */
+  rollbackTo?: (build: Pick<AppBuild, "id">) => Promise<void>;
   unpublish?: () => Promise<void>;
   /** Any verb in flight — every control disables together. */
   pending: boolean;
 }
 
-/** The staff console's verbs — the admin `/customer-apps/{id}/*` mutations. */
-export function useAdminLifecycleActions(appId: string): LifecycleActions {
+/** A production move's dry-run plan, read for the build its confirm names. */
+export interface PlannedMove {
+  target: MoveTarget;
+  plan: MovePlan;
+}
+
+/**
+ * The staff console's verbs. Promote draft and roll back are production moves made
+ * through the plan routes `oxyc promote` and `oxyc rollback` call, acting on the plan
+ * the confirm showed (`planned`): they are refused on the same blockers, register and
+ * retire schedules as those do, and refuse a plan production moved past since it was
+ * read. A first publish and unpublish stay on `/customer-apps/{id}/publish`, which
+ * also sets the app's published flag.
+ *
+ * The card stores a verb when its button is clicked, before the plan has loaded, and
+ * runs it on Confirm. So a verb reads the plan through a ref at the moment it runs,
+ * never the `planned` of the render that created it.
+ */
+export function useAdminLifecycleActions(appId: string, planned?: PlannedMove): LifecycleActions {
   const publish = usePublishApp();
   const unpublish = useUnpublishApp();
-  const rollback = useRollbackApp();
+  const move = useMoveProduction(appId);
+  const plannedRef = useRef(planned);
+  plannedRef.current = planned;
 
-  const promote = async () => {
-    await publish.mutateAsync(appId);
+  const act = async (act: MoveTarget["act"], buildId: string | null, failure: string) => {
+    const planned = plannedRef.current;
+    const matches =
+      planned?.target.act === act && (buildId === null || planned.target.buildId === buildId);
+    if (!planned || !matches) {
+      toast.error(`${failure}: the plan for this build has not been read`);
+      throw new Error("no plan for this move");
+    }
+    try {
+      await move.mutateAsync(planned);
+      toast.success(`Build ${shortBuildId(planned.plan.build.build_id)} is now live.`);
+    } catch (err) {
+      toast.error(errMessage(err, failure));
+      throw err;
+    }
   };
 
   return {
-    promoteDraft: promote,
-    publish: promote,
-    rollbackTo: async (build) => {
-      try {
-        await rollback.mutateAsync({ id: appId, buildId: build.id });
-        toast.success(`Build ${shortBuildId(build.build_id)} is now live.`);
-      } catch (err) {
-        toast.error(errMessage(err, "Couldn't change the live build"));
-        throw err;
-      }
+    // The draft the confirm planned, whichever it was: the card names no build here.
+    promoteDraft: () => act("promote", null, "Couldn't promote the draft"),
+    publish: async () => {
+      await publish.mutateAsync(appId);
     },
+    rollbackTo: (build) => act("rollback", build.id, "Couldn't change the live build"),
     unpublish: async () => {
       await unpublish.mutateAsync(appId);
     },
-    pending: publish.isPending || unpublish.isPending || rollback.isPending
+    pending: publish.isPending || unpublish.isPending || move.isPending
   };
 }
 

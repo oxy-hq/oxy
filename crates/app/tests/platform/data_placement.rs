@@ -163,6 +163,16 @@ const TABLES: &[(&str, Placement)] = &[
         Control("at-most-once failure page ledger"),
     ),
     (
+        "app_function_invocation_calls",
+        Control(
+            "per-call timing of an invocation: registry op, offset, duration, error class and the \
+             identifiers its F2 span records; never SQL, values, URL paths or bodies. The console \
+             copy of the platform's own spans, kept here rather than in the product ClickHouse \
+             store because product capture is opt-in and off on a dev box, where the waterfall \
+             would go dark; bounded by 200 calls a row and a 3-day prune",
+        ),
+    ),
+    (
         "app_function_invocations",
         Backlog {
             holds: "invocation bookkeeping with result_body and error text",
@@ -254,7 +264,9 @@ const TABLES: &[(&str, Placement)] = &[
             holds: "app SDK events with a free-form payload",
             belongs: "Airhouse. The usage drain already appends the beacon's oxy-* rows to the \
                       workspace's oxy_custom_app_usage (W2.3b); these rows go once the Activity \
-                      tab reads it, with retention and a backfill. SDK events recorded through \
+                      tab and the release timeline's vitals read \
+                      (admin::apps::releases::vitals, its one reader of oxy-web-vitals) read \
+                      it, with retention and a backfill. SDK events recorded through \
                       record_event are not appended yet",
         },
     ),

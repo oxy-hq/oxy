@@ -11,6 +11,7 @@ use sea_orm::DatabaseConnection;
 use uuid::Uuid;
 
 use crate::seed_apps::{AppTarget, clear_example_apps, seed_example_apps, seeded_app_workspace_of};
+use crate::seed_fixture;
 use crate::seed_storage::{clear_storage_usage, seed_storage_usage};
 
 /// Deploy the example custom app to the demo workspace, and to Acme's (so the
@@ -72,9 +73,26 @@ pub fn example_apps() -> ExampleAppsSeam {
         deploy: |conn, workspace_id, path, team| {
             Box::pin(deploy_example_apps(conn, workspace_id, path, team))
         },
+        fixtures: |conn, workspace_id, compiled| {
+            Box::pin(seed_fixture::seed_demo_fixture(
+                conn,
+                workspace_id,
+                compiled,
+            ))
+        },
         clear_storage: |conn| Box::pin(clear_storage_usage(conn)),
-        clear_apps: |conn| Box::pin(clear_example_apps(conn)),
+        clear_apps: |conn| Box::pin(clear_apps(conn)),
     }
+}
+
+/// The example apps, then the demo fixture (whose clear retires its schedules
+/// before it deletes the app).
+async fn clear_apps(conn: &DatabaseConnection) -> Result<u64, OxyError> {
+    let examples = clear_example_apps(conn).await?;
+    let fixture = seed_fixture::clear_fixture(conn)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("clear the demo fixture: {e}")))?;
+    Ok(examples + fixture)
 }
 
 /// Drop the demo workspace row and every seeded example app (`oxy seed --clear`).
@@ -91,6 +109,7 @@ pub async fn seed_demo(workspace_path: Option<std::path::PathBuf>) -> Result<(),
         oxy_app::surface::seed::SeedOptions {
             compile: false,
             llm_keys: false,
+            fixtures: false,
         },
         Some(example_apps()),
     )

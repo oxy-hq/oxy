@@ -1,4 +1,5 @@
 import { PRODUCTION } from "@/types/appEnvironments";
+import type { MovePlan, MoveRequest, MoveTarget } from "@/types/appPromote";
 import type {
   AppAvailability,
   AppBuildHistory,
@@ -15,6 +16,7 @@ import type {
   FunctionInvocation,
   FunctionLogLine,
   FunctionRunDetail,
+  InvocationCalls,
   OxyAccessRow
 } from "@/types/apps";
 import { apiClient } from "./axios";
@@ -207,6 +209,15 @@ export const CustomAppsService = {
   async getFunctionRun(id: string, runId: string): Promise<FunctionRunDetail> {
     const response = await apiClient.get(
       `${appPath(id)}/function-runs/${encodeURIComponent(runId)}`
+    );
+    return response.data;
+  },
+
+  /** One invocation's `ctx.*` call trace — the waterfall. 404
+   *  `invocation_not_found` for an id that is not this app's. */
+  async getInvocationCalls(id: string, invocationId: string): Promise<InvocationCalls> {
+    const response = await apiClient.get(
+      `${appPath(id)}/invocations/${encodeURIComponent(invocationId)}/calls`
     );
     return response.data;
   },
@@ -432,6 +443,24 @@ export const CustomAppsService = {
       `${appPath(id)}/environments`
     );
     return response.data.environments;
+  },
+
+  /**
+   * Plan (`dry_run`) or make one production move — the routes `oxyc promote` and
+   * `oxyc rollback` call. A promote moves `buildId` from staging; a rollback moves
+   * production back to `buildId`. The act answers 409 with the plan's `blockers`, or
+   * `target_moved` when production moved since `expect_current` was read.
+   */
+  async moveProduction(id: string, target: MoveTarget, body: MoveRequest): Promise<MovePlan> {
+    const source =
+      target.act === "promote"
+        ? { from: "staging", build: target.buildId }
+        : { to: target.buildId };
+    const response = await apiClient.post<MovePlan>(
+      `${appPath(id)}/environments/production/${target.act}`,
+      { ...source, ...body }
+    );
+    return response.data;
   },
 
   /** Create a dev sandbox. 409 when the name is taken or reserved. */

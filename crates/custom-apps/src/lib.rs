@@ -36,6 +36,8 @@
 //!   the bounded queue they are `try_send`-ed onto and the sink that drains it.
 //! - `gate`: the data-plane gate's decision half (user, workspace row, access
 //!   verdict) and the context it resolves; `oxy-app` keeps the request-facing entry.
+//! - `call_trace`, `call_trace_store`: every `ctx.*` call of one function
+//!   invocation as a timed record (the console's waterfall), and its table.
 //! - `updates`: how a long-open tab picks up a new build (the platform mode,
 //!   an app's `autoUpdate`, the `/fn` build handshake headers).
 
@@ -53,6 +55,8 @@ pub mod build_state;
 pub mod build_store;
 pub mod bundle_cache;
 pub mod cache;
+pub mod call_trace;
+pub mod call_trace_store;
 pub mod env_resolve;
 pub mod environments;
 pub mod function_trigger;

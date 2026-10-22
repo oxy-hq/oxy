@@ -156,6 +156,9 @@ impl ProjectFunctionHost {
         (plane, namespace, verb, table): HeldTarget<'_>,
         note: Option<&'static str>,
     ) {
+        // A host-held op answers as if it ran (a 409 fetch, a held email), so
+        // the call's trace record learns it was held from here.
+        super::super::call_note::note_held();
         tracing::info!(
             op = op.name(),
             environment = %self.policy.environment(),

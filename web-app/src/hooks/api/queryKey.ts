@@ -633,8 +633,14 @@ const customAppKeys = {
   functionInvocations: (id: string, name: string) =>
     ["customApps", "functions", id, name, "invocations"] as const,
   functionRun: (id: string, runId: string) => ["customApps", "functionRun", id, runId] as const,
+  /** One invocation's call trace. A recorded trace never changes. */
+  invocationCalls: (id: string, invocationId: string) =>
+    ["customApps", "invocationCalls", id, invocationId] as const,
   /** The app's failures grouped per `(function, fingerprint)`, over `days`. */
   issues: (id: string, days: number) => ["customApps", "issues", id, days] as const,
+  /** The release timeline over `days`. Under the `customApps` prefix, so a production
+   *  move refetches it. */
+  releases: (id: string, days: number) => ["customApps", "releases", id, days] as const,
   /** The app's declared ∪ stored secrets. Never holds a value — reveal is its
    *  own uncached call, so a decrypted secret never sits in the query cache.
    *  Without an environment it is the prefix of every environment's view: a
@@ -647,6 +653,10 @@ const customAppKeys = {
    *  pre-promote check. Under the `secrets` prefix, so every write refetches it. */
   secretsForBuild: (id: string, environment: string, build: string) =>
     ["customApps", "secrets", id, environment, "build", build] as const,
+  /** The dry-run plan of one production move — the console's promote and rollback
+   *  confirms. Under the `customApps` prefix, so every app write refetches it. */
+  movePlan: (id: string, act: string, build: string) =>
+    ["customApps", "movePlan", id, act, build] as const,
   /** The kinds the app's live build declares, for the console's test panel. */
   notificationKinds: (id: string) => ["customApps", "notificationKinds", id] as const,
   activitySummary: (id: string) => ["customApps", "activity", id, "summary"] as const,

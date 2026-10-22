@@ -30,6 +30,10 @@ pub use oxy_custom_apps::audience;
 /// `x-oxy-live-build` on every `/fn` answer, and `409 ClientBuildStale` for a
 /// stale page's call to a function the live build lacks.
 mod build_handshake;
+/// What the host learned about one `ctx.*` call (namespace, verb, table),
+/// handed back to the broker for the call's trace record.
+#[cfg(feature = "custom-app-functions")]
+mod call_note;
 /// Whose call this is — the scope every per-call key (result cache,
 /// idempotency record, rate-limit bucket) is built from, environment included.
 mod call_scope;
@@ -130,6 +134,7 @@ pub(crate) use check_run::QueuedBy;
 /// the engine-backed tests in `tests/custom_apps/` build a real host.
 #[cfg(feature = "custom-app-functions")]
 pub use data_audit::InvocationIdentity;
+pub(crate) use failure_signal::seeded_fingerprint;
 /// Every name a host op pages under. Read by `tests/custom_apps/canary_coverage.rs`,
 /// which checks the platform canary exercises each one or exempts it with a reason.
 #[cfg(feature = "custom-app-functions")]

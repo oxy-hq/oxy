@@ -300,6 +300,7 @@ export const LivePreview = ({
         open={panelOpen}
         onToggle={() => setPanelOpen((o) => !o)}
         available={available}
+        appId={app.id}
       />
     </div>
   );

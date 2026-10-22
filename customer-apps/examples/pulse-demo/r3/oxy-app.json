@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 2,
+  "slug": "pulse-demo",
+  "name": "Pulse (demo fixture)",
+  "description": "A store leaderboard with Oxy Functions, seeded with a release history for the console's release timeline and function views.",
+  "icon": "icon.svg",
+  "status": "Demo fixture · seeded by `oxy seed --fixtures` · release history is seeded, current traffic is real",
+  "functions": {
+    "stores": {
+      "route": true,
+      "timeoutSeconds": 30
+    },
+    "store": {
+      "route": true,
+      "timeoutSeconds": 30,
+      "storage": {
+        "read": true
+      }
+    },
+    "snapshot": {
+      "schedule": "*/15 * * * *",
+      "timezone": "America/New_York",
+      "timeoutSeconds": 60,
+      "storage": {
+        "read": true,
+        "write": true
+      }
+    },
+    "smoke": {
+      "check": true,
+      "timeoutSeconds": 30,
+      "storage": {
+        "read": true
+      }
+    },
+    "digest": {
+      "route": true,
+      "schedule": "0 8 * * 1",
+      "timezone": "America/New_York",
+      "timeoutSeconds": 60,
+      "storage": {
+        "read": true,
+        "write": true
+      },
+      "email": {
+        "send": true
+      }
+    }
+  }
+}

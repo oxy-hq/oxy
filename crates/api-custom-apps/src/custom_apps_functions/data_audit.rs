@@ -148,6 +148,8 @@ pub(super) fn record_db_span(summary: &QuerySummary, namespace: Option<&str>, ta
     if !table.is_empty() {
         span.record("db.collection.name", table);
     }
+    // The same values, for the call's trace record: one writer, two sinks.
+    super::call_note::note_db(namespace, &summary.verb, Some(table));
 }
 
 /// Fold a write into the invocation's buffer: the same (plane, namespace,
@@ -223,6 +225,7 @@ pub(super) fn record_db_namespace(namespace: &str) {
     if identifier_like(namespace) {
         tracing::Span::current().record("db.namespace", namespace);
     }
+    super::call_note::note_db(Some(namespace), "", None);
 }
 
 /// A verb that changes data or schema. Reads never become an audit row.

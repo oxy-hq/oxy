@@ -5,10 +5,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppLifecycle as Lifecycle } from "@/hooks/api/customApps/deriveLifecycle";
 import { CustomAppsService } from "@/services/api/customApps";
-import type { AppBuild, AppSecrets, CustomApp } from "@/types/apps";
+import type { MovePlan } from "@/types/appPromote";
+import type { AppBuild, CustomApp } from "@/types/apps";
 import { lifecycleVerdict } from "../../appStatus";
 
-vi.mock("@/services/api/customApps", () => ({ CustomAppsService: { listSecrets: vi.fn() } }));
+vi.mock("@/services/api/customApps", () => ({
+  CustomAppsService: { listSecrets: vi.fn(), moveProduction: vi.fn() }
+}));
 vi.mock("@/hooks/api/customApps/useAppLifecycle", () => ({
   useAppLifecycle: () => LIFECYCLE
 }));
@@ -53,13 +56,24 @@ const LIFECYCLE: Lifecycle = {
   error: null
 };
 
-const missing = (key: string): AppSecrets => ({
+const plan = (over: Partial<MovePlan> = {}): MovePlan => ({
+  action: "promote",
   app_id: "app-1",
-  app_slug: "storefront",
-  app_name: "Storefront",
-  environment: "production",
-  missing_required: 1,
-  entries: [{ key, is_set: false, declared: true, required: true, source: "manifest" }]
+  from: "staging",
+  to: "production",
+  build: { id: "draft", build_id: "bbbbbbbbbbbbbbbb", published_by: null, created_at: "" },
+  current: { id: "live", build_id: "aaaaaaaaaaaaaaaa" },
+  expect_current: "live",
+  served_since: null,
+  functions: { added: [], removed: [], changed: [] },
+  schedules: { added: [], removed: [], changed: [] },
+  migrations: { when: "before_move", oltp: [], airhouse: [] },
+  required_secrets_unset: [],
+  blockers: [],
+  warnings: [],
+  dry_run: true,
+  moved: false,
+  ...over
 });
 
 const renderCard = () =>
@@ -74,66 +88,103 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("AppLifecycle — required secrets before a build goes live", () => {
-  it("warns in the promote confirm, and says oxyc promote would refuse it", async () => {
-    vi.mocked(CustomAppsService.listSecrets).mockResolvedValue(missing("NEW_KEY"));
+describe("AppLifecycle — a production move confirms on its plan", () => {
+  it("reads the draft's promote plan from staging and says what it changes", async () => {
+    vi.mocked(CustomAppsService.moveProduction).mockResolvedValue(
+      plan({
+        functions: { added: ["export"], removed: [], changed: ["totals"] },
+        schedules: {
+          added: [],
+          removed: [{ function: "nightly", cron: "0 0 * * *", timezone: "UTC" }],
+          changed: []
+        },
+        migrations: { when: "before_move", oltp: ["0002_note.sql"], airhouse: [] },
+        blockers: [{ code: "schedule_removal_unconfirmed", message: "nightly is retired" }]
+      })
+    );
     renderCard();
     await userEvent.click(screen.getByTestId("app-lifecycle-promote"));
     const dialog = screen.getByTestId("app-lifecycle-confirm");
-    const warning = await within(dialog).findByTestId("admin-app-missing-secrets-warning");
-    expect(warning).toHaveTextContent("production does not have: NEW_KEY");
-    expect(warning).toHaveTextContent("oxyc promote refuses this build until they are set.");
-    expect(CustomAppsService.listSecrets).toHaveBeenCalledWith("app-1", "production", "draft");
-    // A warning, not a gate: the console's promote does not refuse it.
+    const summary = await within(dialog).findByTestId("app-lifecycle-plan");
+    expect(CustomAppsService.moveProduction).toHaveBeenCalledWith(
+      "app-1",
+      { act: "promote", buildId: "draft" },
+      { dry_run: true }
+    );
+    expect(summary).toHaveTextContent("Retires the schedule of nightly, 0 0 * * * (UTC).");
+    expect(summary).toHaveTextContent("Applies 1 migration before it goes live: 0002_note.sql.");
+    expect(summary).toHaveTextContent("Adds export.");
+    expect(summary).toHaveTextContent("Changes totals.");
+    // A schedule removal is the one blocker the confirm itself confirms.
+    expect(within(dialog).queryByTestId(/app-lifecycle-plan-blocker-/)).toBeNull();
     expect(within(dialog).getByTestId("app-lifecycle-confirm-ok")).toBeEnabled();
   });
 
-  it("frees the confirm on the first failed check rather than retrying it", async () => {
-    // A rollback during an outage of the secrets list must not wait out retries:
-    // a warning that cannot be computed is not shown, so retrying only delays it.
-    vi.mocked(CustomAppsService.listSecrets).mockRejectedValue(new Error("502"));
+  it("holds the verb on a blocker oxyc promote would refuse on", async () => {
+    vi.mocked(CustomAppsService.moveProduction).mockResolvedValue(
+      plan({
+        required_secrets_unset: ["NEW_KEY"],
+        blockers: [{ code: "required_secrets_unset", message: "production has no NEW_KEY" }]
+      })
+    );
     renderCard();
     await userEvent.click(screen.getByTestId("app-lifecycle-promote"));
     const dialog = screen.getByTestId("app-lifecycle-confirm");
-    await vi.waitFor(
-      () => expect(within(dialog).getByTestId("app-lifecycle-confirm-ok")).toBeEnabled(),
-      { timeout: 500 }
+    const blocker = await within(dialog).findByTestId(
+      "app-lifecycle-plan-blocker-required_secrets_unset"
     );
-    expect(CustomAppsService.listSecrets).toHaveBeenCalledTimes(1);
+    expect(blocker).toHaveTextContent("production has no NEW_KEY");
+    expect(within(dialog).getByTestId("app-lifecycle-confirm-ok")).toBeDisabled();
   });
 
-  it("holds the confirm until the check settles, then never blocks", async () => {
-    let answer: (s: AppSecrets) => void = () => {};
-    vi.mocked(CustomAppsService.listSecrets).mockReturnValue(
+  it("holds the verb until the plan answers", async () => {
+    let answer: (p: MovePlan) => void = () => {};
+    vi.mocked(CustomAppsService.moveProduction).mockReturnValue(
       new Promise((resolve) => (answer = resolve))
     );
     renderCard();
     await userEvent.click(screen.getByTestId("app-lifecycle-promote"));
     const dialog = screen.getByTestId("app-lifecycle-confirm");
-    await within(dialog).findByText("Checking required secrets…");
-    // Clicked within the request's round trip, the warning would be skipped.
+    await within(dialog).findByTestId("app-lifecycle-plan-loading");
     expect(within(dialog).getByTestId("app-lifecycle-confirm-ok")).toBeDisabled();
-    answer(missing("NEW_KEY"));
-    await within(dialog).findByTestId("admin-app-missing-secrets-warning");
+    answer(plan());
+    await within(dialog).findByText("No function, schedule or migration changes.");
     expect(within(dialog).getByTestId("app-lifecycle-confirm-ok")).toBeEnabled();
   });
 
-  it("checks the build a rollback picks, and only warns", async () => {
-    vi.mocked(CustomAppsService.listSecrets).mockResolvedValue(missing("OLD_KEY"));
+  it("does not move unplanned when the plan cannot be read, and does not retry it", async () => {
+    vi.mocked(CustomAppsService.moveProduction).mockRejectedValue(new Error("502"));
+    renderCard();
+    await userEvent.click(screen.getByTestId("app-lifecycle-promote"));
+    const dialog = screen.getByTestId("app-lifecycle-confirm");
+    await within(dialog).findByTestId("app-lifecycle-plan-error");
+    expect(within(dialog).getByTestId("app-lifecycle-confirm-ok")).toBeDisabled();
+    expect(CustomAppsService.moveProduction).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the rollback plan of the build a rollback picks", async () => {
+    vi.mocked(CustomAppsService.moveProduction).mockResolvedValue(
+      plan({ action: "rollback", from: null, warnings: ["production has no OLD_KEY"] })
+    );
     renderCard();
     await userEvent.click(screen.getByTestId("app-lifecycle-rollback"));
     await userEvent.click(await screen.findByTestId("app-lifecycle-rollback-ccccccc"));
     const dialog = screen.getByTestId("app-lifecycle-confirm");
-    const warning = await within(dialog).findByTestId("admin-app-missing-secrets-warning");
-    expect(warning).toHaveTextContent("production does not have: OLD_KEY");
-    expect(warning).not.toHaveTextContent("oxyc promote");
-    expect(CustomAppsService.listSecrets).toHaveBeenCalledWith("app-1", "production", "old");
+    const warning = await within(dialog).findByTestId("app-lifecycle-plan-warning");
+    expect(warning).toHaveTextContent("production has no OLD_KEY");
+    expect(CustomAppsService.moveProduction).toHaveBeenCalledWith(
+      "app-1",
+      { act: "rollback", buildId: "old" },
+      { dry_run: true }
+    );
+    expect(within(dialog).getByTestId("app-lifecycle-confirm-ok")).toBeEnabled();
   });
 
   it("asks nothing for a verb that puts no build live", async () => {
     renderCard();
     await userEvent.click(screen.getByTestId("app-lifecycle-unpublish"));
     expect(screen.getByTestId("app-lifecycle-confirm-ok")).toBeEnabled();
+    expect(CustomAppsService.moveProduction).not.toHaveBeenCalled();
     expect(CustomAppsService.listSecrets).not.toHaveBeenCalled();
   });
 });

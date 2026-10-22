@@ -418,6 +418,14 @@ pub(super) async fn record(
         )
         .await;
     }
+    // The waterfall's trace: spawned, so the answer never waits on it.
+    crate::custom_apps_call_trace_store::spawn_settled(
+        db,
+        finished.app.id,
+        finished.invocation_id,
+        status,
+        &finished.clock.meters,
+    );
     custom_apps_telemetry::record_function(FunctionEvent {
         org_id: finished.app.org_id,
         app_id: finished.app.id,

@@ -300,6 +300,18 @@ impl Failure {
     }
 }
 
+/// The fingerprint [`Failure::of`] gives an outcome with no failed host call,
+/// for rows written without running one: the demo fixture's seeded invocation
+/// history (`seed_fixture::history`), which must group with the rows its real
+/// runs produce. The struct stays private; this is the one rule, shared.
+pub(crate) fn seeded_fingerprint(
+    status: &str,
+    http_status: u16,
+    error: Option<&str>,
+) -> Option<String> {
+    Failure::of(status, http_status, error, None).map(|f| f.fingerprint)
+}
+
 /// Who an `error` status belongs to, from the [`HostError`] kind the failure
 /// carries: the app's code threw, the runtime failed, the app breached its
 /// heap ceiling. Anything else failed before the isolate ran — a workspace or

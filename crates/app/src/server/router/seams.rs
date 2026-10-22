@@ -150,13 +150,23 @@ pub struct ExampleAppsSeam {
         Option<uuid::Uuid>,
     )
         -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>>,
+    /// Build the demo fixture app (`oxy seed --fixtures`) in the demo workspace
+    /// (its id), after the compile; the flag says the compile succeeded. Warns
+    /// instead of failing.
+    pub fixtures:
+        for<'a> fn(
+            &'a sea_orm::DatabaseConnection,
+            uuid::Uuid,
+            bool,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>>,
     /// Remove the seeded storage figures (before the apps, see `clear_demo`).
     pub clear_storage: for<'a> fn(
         &'a sea_orm::DatabaseConnection,
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Result<(), oxy_shared::errors::OxyError>> + Send + 'a>,
     >,
-    /// Remove the seeded example apps; how many were removed.
+    /// Remove the seeded example apps and the demo fixture; how many were
+    /// removed.
     pub clear_apps: for<'a> fn(
         &'a sea_orm::DatabaseConnection,
     ) -> std::pin::Pin<

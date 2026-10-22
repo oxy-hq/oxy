@@ -175,6 +175,9 @@ pub struct InvocationMeters {
     /// function is slow" and "the platform is slow to start the function"
     /// produce the same `duration_ms`.
     pub init_ms: Arc<AtomicU32>,
+    /// Every `ctx.*` call as a timed record, on the same zero as `init_ms`:
+    /// the console's waterfall (`crate::call_trace`).
+    pub calls: Arc<crate::call_trace::CallTrace>,
     /// The zero point `init_ms` is measured from. Carried here rather than
     /// passed alongside so the isolate thread needs one argument, not two.
     started: std::time::Instant,
@@ -191,11 +194,21 @@ impl InvocationMeters {
     /// function, so `init_ms` covers everything between deciding to run and
     /// tenant code actually running.
     pub fn start() -> Self {
+        let started = std::time::Instant::now();
         Self {
             host_calls: Arc::new(AtomicU32::new(0)),
             init_ms: Arc::new(AtomicU32::new(0)),
-            started: std::time::Instant::now(),
+            calls: Arc::new(crate::call_trace::CallTrace::new(started)),
+            started,
         }
+    }
+
+    /// Count one host call and begin its trace record. The count's previous
+    /// value is the call's arrival number, so the trace needs no counter of
+    /// its own. Called once per call, where every call funnels through.
+    pub fn begin_call(&self) -> crate::call_trace::CallStart {
+        let seq = self.host_calls.fetch_add(1, Ordering::Relaxed);
+        self.calls.begin(seq)
     }
 
     /// Stamp `init_ms`. One call site: the boundary in

@@ -127,6 +127,7 @@ pub mod listener {
 pub mod seed {
     pub use crate::cli::commands::seed::{SeedOptions, clear_demo, seed_demo_with};
     pub use crate::cli::commands::seed_partners::{is_local_db, seeded_workspace_id};
+    pub use crate::cli::commands::seed_platform_grants::unscoped_app_operator_email;
 }
 
 /// The seams a surface crate builds for the composition root to hand `oxy-app`

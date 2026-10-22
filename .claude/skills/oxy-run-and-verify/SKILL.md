@@ -24,7 +24,7 @@ The loop is always the same, and it never involves `--local`, hand-started serve
 
 | Command | Does |
 | ------- | ---- |
-| `just up` | `cargo build -p oxy-server` → `oxy start --enterprise` (Docker Postgres :15432, API :3000, no-auth internal API 127.0.0.1:3001) → `oxy seed --workspace-path ./examples --llm-keys` (compiles + promotes every seeded workspace; copies env LLM keys into their secrets) → Vite on 127.0.0.1:5173 → writes state.json and prints three ready sign-in links |
+| `just up` | `cargo build -p oxy-server` → `oxy start --enterprise` (Docker Postgres :15432, API :3000, no-auth internal API 127.0.0.1:3001) → `oxy seed --workspace-path ./examples --llm-keys --fixtures` (compiles + promotes every seeded workspace; copies env LLM keys into their secrets; builds the `pulse-demo` fixture app once) → Vite on 127.0.0.1:5173 → writes state.json and prints three ready sign-in links |
 | `just up --no-build` | reuse the existing binary (`$OXY_BIN`, else `target/debug/oxy`) |
 | `just up --no-seed` | skip the seed (faster when data and compiled revisions are already there) |
 | `just up --no-frontend` | API only, for `curl` checks |
@@ -61,7 +61,7 @@ Every run writes **new** timestamped logs under `.oxy-dev/logs/`. Take the path 
 
 Pick the **least-privileged persona that should see the feature**, and use a second one to prove who shouldn't. Staff entering any org other than `local` needs an assume-role session, and that is a policy boundary, not a bug.
 
-Seeded orgs: `local` (Demo `70787bb2-e11b-5488-b2c3-02e60d5fc7d3` from `./examples`, custom app `oxy-starter`), `acme` (partner; manages `northwind`, `globex`), `initech` (partner; manages `umbrella`), `vandelay` (unmanaged). Take workspace ids from `state.json`.
+Seeded orgs: `local` (Demo `70787bb2-e11b-5488-b2c3-02e60d5fc7d3` from `./examples`, custom apps `oxy-starter` and `pulse-demo`), `acme` (partner; manages `northwind`, `globex`), `initech` (partner; manages `umbrella`), `vandelay` (unmanaged). Take workspace ids from `state.json`.
 
 ## Route map
 
@@ -84,6 +84,7 @@ Seeded orgs: `local` (Demo `70787bb2-e11b-5488-b2c3-02e60d5fc7d3` from `./exampl
 | Admin console | `/admin` → `/admin/apps`; `/admin/{orgs,users,workspaces,workspace-health,tenants,compiles,internal-jobs,feature-flags,audit,app-admins,publish-tokens,airhouse,oltp}`; Global-Owner only: `/admin/billing/queue`, `/admin/airway` |
 | Partner console | `/partners` · `/partners/{apps,team,activity}` |
 | Custom app | `/customer-apps/local/oxy-starter/` (served by the backend through Vite's proxy) |
+| Demo fixture app (functions + a 7-day release history) | `/admin/apps/local/pulse-demo?section=builds` (also `functions`, `issues`) as `operator`; the app itself at `/customer-apps/local/pulse-demo/`. Its history (r1..r4 promoted, r4 the bad release live, r5 on staging) and the traffic before the seed are seeded rows; the runs it queues, the `*/15` `snapshot` schedule and whatever you click are real. Present once built: to reset it, `oxy seed --clear` (or delete the app) and `just up` |
 
 `<pathb64>` is standard base64 of the workspace-relative file path (`printf %s business_metrics_dashboard.app.yml | base64`). URL-encode `?` and `&` inside `next`: `next=/local/workspaces/<id>/home%3Fsettings%3Dorganization.members`.
 

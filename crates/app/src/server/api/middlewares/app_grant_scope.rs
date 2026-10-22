@@ -82,6 +82,12 @@ pub const SANDBOX_ALLOWED: &[Allowed] = &[
         "GET",
         "/customer-apps/{id}/invocations/{invocation_id}/held",
     ),
+    // The call trace of one invocation, behind the same fences as `held`.
+    row(
+        "R4",
+        "GET",
+        "/customer-apps/{id}/invocations/{invocation_id}/calls",
+    ),
     row("S1", "POST", "/customer-apps/{id}/secrets"),
     row("S2", "DELETE", "/customer-apps/{id}/secrets/{key}"),
     row("S3", "GET", "/customer-apps/{id}/secrets"),

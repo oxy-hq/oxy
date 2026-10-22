@@ -2,24 +2,31 @@ import { X } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import { cn } from "@/libs/shadcn/utils";
-import type { OxyRequestEntry } from "../../useOxyRequestLog";
+import { isFunctionCallUrl, type OxyRequestEntry } from "../../useOxyRequestLog";
 import { getHeader, prettyBody, statusLabel, statusTone } from "../format";
+import { ServerSide } from "./ServerSide";
 
 /**
  * DevTools-style detail pane for a single captured request. Three tabs:
  * Headers (general + request/response headers), Payload (query params +
  * request body), and Response (response body). Bodies are pretty-printed as
- * JSON when they parse.
+ * JSON when they parse. A call to one of the app's functions also gets Server
+ * side: the `ctx.*` calls of the invocation it ran.
  */
 export const RequestDetail = ({
   entry,
+  appId,
   onClose,
   className
 }: {
   entry: OxyRequestEntry;
+  /** The previewed app, for its invocations' call traces. */
+  appId?: string;
   onClose: () => void;
   className?: string;
 }) => {
+  // Set only for a function call: the app whose invocation it ran.
+  const serverApp = appId != null && isFunctionCallUrl(entry.url) ? appId : null;
   const params = parseQuery(entry.url);
   const reqType = getHeader(entry.reqHeaders, "content-type");
   const resType = getHeader(entry.resHeaders, "content-type");
@@ -60,6 +67,15 @@ export const RequestDetail = ({
           <TabsTrigger value='response' className='text-xs'>
             Response
           </TabsTrigger>
+          {serverApp != null && (
+            <TabsTrigger
+              value='server'
+              className='text-xs'
+              data-testid='admin-app-debug-server-side-tab'
+            >
+              Server side
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value='headers' className='min-h-0 flex-1 overflow-auto p-3'>
@@ -100,6 +116,16 @@ export const RequestDetail = ({
             />
           </Section>
         </TabsContent>
+
+        {serverApp != null && (
+          <TabsContent
+            value='server'
+            className='min-h-0 flex-1 overflow-auto p-3'
+            data-testid='admin-app-debug-server-side'
+          >
+            <ServerSide appId={serverApp} entry={entry} />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

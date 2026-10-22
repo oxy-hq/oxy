@@ -27,7 +27,7 @@ export type LifecycleVariant = "full" | "row";
 export interface LifecycleTarget {
   /** `app_builds.id`. */
   buildId: string;
-  act: "promote" | "rollback";
+  act: "promote" | "rollback" | "publish";
 }
 
 /** What a surface checked about the target, said inside the confirm. `hold` keeps
@@ -136,7 +136,7 @@ export const LifecycleCard = ({
               LIFECYCLE_COPY.publish(orgSlug),
               actions.publish as () => Promise<void>,
               // A first publish with a draft makes that draft live.
-              draftBuild ? { buildId: draftBuild.id, act: "promote" } : undefined
+              draftBuild ? { buildId: draftBuild.id, act: "publish" } : undefined
             )
           }
           data-testid='app-lifecycle-publish'

@@ -114,12 +114,15 @@ async fn statements_before_isolate() -> Vec<String> {
     COUNTING.store(false, Ordering::SeqCst);
     assert_eq!(call.status, 200, "{}", call.raw);
     // The live-tail watcher poll runs on its own timer, not for this call; it
-    // lands in the window on a slow machine and is not admission.
+    // lands in the window on a slow machine and is not admission. Nor is the
+    // previous call's call-trace write, which is spawned off that call's
+    // request path (`call_trace_store::spawn_write`) and can land here.
     let seen: Vec<String> = statements()
         .lock()
         .unwrap()
         .iter()
         .filter(|s| !s.contains("app_environment_tails"))
+        .filter(|s| !s.contains("app_function_invocation_calls"))
         .cloned()
         .collect();
     let settled = seen

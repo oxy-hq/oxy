@@ -33,8 +33,8 @@
 
 use crate::common::read_repo_file;
 use crate::custom_app_functions_manual_run::{
-    ERRORS_ROUTE, FUNCTION_INVOCATIONS_ROUTE, FUNCTIONS_ROUTE, HELD_ROUTE, INVOCATIONS_ROUTE,
-    LOGS_ROUTE, RUN_DETAIL_ROUTE, RUNS_ROUTE,
+    CALLS_ROUTE, ERRORS_ROUTE, FUNCTION_INVOCATIONS_ROUTE, FUNCTIONS_ROUTE, HELD_ROUTE,
+    INVOCATIONS_ROUTE, LOGS_ROUTE, RUN_DETAIL_ROUTE, RUNS_ROUTE,
 };
 
 /// `rel` (from the repo root) with whole-line comments dropped, every whitespace
@@ -141,6 +141,7 @@ fn the_admin_app_mount_wears_the_one_stack_the_manual_run_tests_call() {
         format!(".route(\"{FUNCTION_INVOCATIONS_ROUTE}\",get(functions::list_invocations))"),
         format!(".route(\"{INVOCATIONS_ROUTE}\",get(invocations::list_app_invocations))"),
         format!(".route(\"{HELD_ROUTE}\",get(held_writes::get_held_writes))"),
+        format!(".route(\"{CALLS_ROUTE}\",get(invocation_calls::get_invocation_calls))"),
     ] {
         assert!(
             between(&apps, "fncore_routes(", "fnconsole_routes(").contains(&route),

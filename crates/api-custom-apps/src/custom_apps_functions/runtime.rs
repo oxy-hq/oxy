@@ -47,17 +47,21 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use sentry::SentryFutureExt;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
-use tracing::Instrument;
 
+mod call_label;
+#[cfg(test)]
+mod call_label_tests;
 mod engine;
 mod host_call;
 mod host_call_span;
+mod host_call_task;
 mod ops;
 #[cfg(test)]
 mod snapshot_tests;
+#[cfg(test)]
+mod test_calls;
 #[cfg(test)]
 mod tests;
 
@@ -67,9 +71,9 @@ use super::host::FunctionCapabilities;
 use super::host_error::HostError;
 use crate::custom_apps_telemetry::InvocationMeters;
 use engine::{ActiveEngine, IsolateConfig, IsolateEngine, TerminateHandle};
-use host_call::{
-    HostCall, dispatch_host_call, host_call_span, host_call_target, record_host_call_outcome,
-};
+use host_call::HostCall;
+#[cfg(test)]
+use host_call::{dispatch_host_call, host_call_span, host_call_target};
 use ops::{FunctionLogs, OpContext};
 
 /// Per-invocation context handed to the isolate. Built fresh for every
@@ -831,59 +835,12 @@ pub async fn run(
                 );
                 return Err(RuntimeError::Timeout);
             }
-            // Service a host call from the isolate. Spawn so concurrent
-            // ctx.* awaits inside one function don't serialize. Each call runs
-            // under its own span, a child of the invocation span `run` is
-            // being polled in — `tokio::spawn` carries no span by itself, so
-            // without `.instrument` every warehouse query and outbound fetch
-            // was a root trace of its own.
+            // Service a host call from the isolate on a task of its own, so
+            // concurrent ctx.* awaits inside one function don't serialize
+            // (`host_call_task`: its span, its failure note, its trace record).
             maybe_call = call_rx.recv() => {
                 match maybe_call {
-                    Some(call) => {
-                        // Counted here rather than at the op sites: this is the
-                        // one place every `ctx.*` call funnels through, so the
-                        // count cannot drift as ops are added.
-                        meters.host_calls.fetch_add(1, Ordering::Relaxed);
-                        let host = host.clone();
-                        let (span, kind, op) = host_call_span(&call);
-                        // Read before dispatch consumes the call: the note
-                        // keys a later success to the same target.
-                        let target = host_call_target(&call);
-                        tokio::spawn(
-                            async move {
-                                // `dispatch_host_call` consumes its host.
-                                let host_note = host.clone();
-                                let (reply, result) = dispatch_host_call(call, host).await;
-                                let labels = host_note.decides_by_environment();
-                                record_host_call_outcome(kind, &result, labels);
-                                // Before the reply: once the handler can catch
-                                // the error, the failure is already noted.
-                                match &result {
-                                    Err(error) => {
-                                        let error_kind =
-                                            super::host_error_class::classify_host_error_typed(
-                                                error, labels,
-                                            );
-                                        if super::host_call_attrs::counts_toward_paging(error_kind)
-                                        {
-                                            host_note.note_host_call_failure(
-                                                op,
-                                                error_kind,
-                                                &error.message,
-                                                target.as_deref(),
-                                            );
-                                        }
-                                    }
-                                    Ok(_) => host_note.note_host_call_success(op, target.as_deref()),
-                                }
-                                let _ = reply.send(result);
-                            }
-                            .instrument(span)
-                            // The invocation's Sentry hub, for the same reason as
-                            // the isolate thread above.
-                            .bind_hub(sentry::Hub::current()),
-                        );
-                    }
+                    Some(call) => host_call_task::spawn_host_call(call, host.clone(), &meters),
                     None => { /* sender dropped; isolate is finishing */ }
                 }
             }

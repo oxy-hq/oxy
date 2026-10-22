@@ -24,7 +24,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const CLIENT_DIR = join(__dirname, "../../../crates/api-custom-apps/src/client");
 const readScript = (name: string) => readFileSync(join(CLIENT_DIR, name), "utf8");
@@ -436,12 +436,13 @@ describe("sw.js — navigationPreload overlaps worker boot with the fetch", () =
 // ── runtime.js harness ──────────────────────────────────────────────────────
 
 /** Evaluate `runtime.js` against a jsdom window with the globals it reads. */
-function bootRuntime() {
+function bootRuntime(app: Record<string, unknown> = {}) {
   const sent: { n: string; p: Record<string, unknown> }[] = [];
   (window as unknown as Record<string, unknown>).__OXY_APP__ = {
     basePath: SCOPE,
     serviceWorker: false,
-    analytics: true
+    analytics: true,
+    ...app
   };
   Object.defineProperty(navigator, "sendBeacon", {
     configurable: true,
@@ -503,5 +504,57 @@ describe("runtime.js — engagement is reported once per screen", () => {
     const engagements = sent.filter((e) => e.n === "oxy-engagement");
     expect(engagements).toHaveLength(1);
     expect(engagements[0].p.path).toBe("/");
+  });
+});
+
+describe("runtime.js — vitals carry the screen they landed on and the build", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    window.history.replaceState({}, "", "/");
+  });
+
+  /** A navigation entry, so the runtime has numbers to send: jsdom records none. */
+  const withNavigationTiming = () =>
+    vi
+      .spyOn(performance, "getEntriesByType")
+      .mockImplementation((type: string) =>
+        type === "navigation"
+          ? ([
+              { responseStart: 120, domContentLoadedEventEnd: 480 }
+            ] as unknown as PerformanceEntryList)
+          : []
+      );
+
+  const hide = () => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden"
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  };
+
+  it("sends the landing screen, not the one the operator moved to, and the build", () => {
+    const spy = withNavigationTiming();
+    window.history.replaceState({}, "", `${SCOPE}orders?id=42#top`);
+    const sent = bootRuntime({ buildId: "6e5e84a2-17f0-4879-8367-19211bd6a51a" });
+    window.history.pushState({}, "", `${SCOPE}x`);
+    hide();
+    const vitals = sent.filter((e) => e.n === "oxy-web-vitals");
+    expect(vitals).toHaveLength(1);
+    expect(vitals[0].p.path).toBe("/orders");
+    expect(vitals[0].p.build).toBe("6e5e84a2-17f0-4879-8367-19211bd6a51a");
+    expect(vitals[0].p.ttfb).toBe(120);
+    spy.mockRestore();
+  });
+
+  it("sends nothing with analytics off", () => {
+    const spy = withNavigationTiming();
+    const sent = bootRuntime({ analytics: false, buildId: "b" });
+    hide();
+    expect(sent.filter((e) => e.n === "oxy-web-vitals")).toHaveLength(0);
+    spy.mockRestore();
   });
 });

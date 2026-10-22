@@ -82,9 +82,9 @@ const GRANTS: &[GrantSeed] = &[
     },
 ];
 
-/// The unscoped App Operator — what `/api/auth/dev-login?as=operator` names.
-#[cfg(test)]
-pub(crate) fn unscoped_app_operator_email() -> Option<&'static str> {
+/// The unscoped App Operator — what `/api/auth/dev-login?as=operator` names,
+/// and the demo fixture's publisher (`oxy-api-custom-apps` `seed_fixture`).
+pub fn unscoped_app_operator_email() -> Option<&'static str> {
     GRANTS
         .iter()
         .find(|g| g.role == PlatformRole::AppOperator && g.scope_org_slug.is_none())

@@ -51,7 +51,7 @@ fn stack_of(row: &str) -> Vec<Decision> {
     match row {
         "A1" | "A2" => Vec::new(),
         "E1" | "E2" => console((Action::AppNonProduction, On::NewSandbox)),
-        "E3" | "C1" | "C2" | "C3" | "R1" | "R2" | "R3" | "S1" | "S2" | "S3" => console(own),
+        "E3" | "C1" | "C2" | "C3" | "R1" | "R2" | "R3" | "R4" | "S1" | "S2" | "S3" => console(own),
         "P1" => vec![own],
         // The tail: the console's doors, then what L1's handler decides.
         "T1" => CONSOLE

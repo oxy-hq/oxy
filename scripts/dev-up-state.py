@@ -41,7 +41,7 @@ FROM workspaces w LEFT JOIN organizations o ON o.id = w.org_id
 ORDER BY o.slug NULLS LAST, w.name
 """
 APPS_SQL = """
-SELECT o.slug AS org_slug, a.slug AS app_slug, a.name, a.status
+SELECT o.slug AS org_slug, a.slug AS app_slug, a.id::text AS app_id, a.name, a.status
 FROM apps a JOIN organizations o ON o.id = a.org_id
 ORDER BY o.slug, a.slug
 """
@@ -169,6 +169,7 @@ def main():
     apps = (psql_rows(APPS_SQL) or []) if readable else []
     for app in apps:
         app["url"] = f"{FRONTEND}/customer-apps/{app['org_slug']}/{app['app_slug']}/"
+        app["admin_path"] = f"/admin/apps/{app['org_slug']}/{app['app_slug']}"
 
     state = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
