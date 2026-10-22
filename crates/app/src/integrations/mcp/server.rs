@@ -99,8 +99,6 @@ impl OxyMcpServer {
             .with_secrets_manager(SecretsManager::from_environment().map_err(|e| {
                 OxyError::from(anyhow::anyhow!("Failed to create secrets manager: {e}"))
             })?)
-            .try_with_intent_classifier()
-            .await
             .build()
             .await
             .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create config manager: {e}")))?;

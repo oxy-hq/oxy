@@ -225,9 +225,6 @@ async fn run_agentic_for_slack(
     bot_token: &str,
     preagg: PreaggCacheCtx,
 ) -> Result<AgentExecOutput, OxyError> {
-    // No `.try_with_intent_classifier()` — the agentic pipeline doesn't read
-    // `WorkspaceManager.intent_classifier`, and loading one would mean an
-    // OpenAI client init on every Slack message for nothing.
     let workspace_manager =
         crate::integrations::slack::workspace::build_manager(workspace_id, "slack_agentic_run")
             .await?;

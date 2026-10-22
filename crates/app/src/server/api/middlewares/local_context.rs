@@ -181,8 +181,6 @@ async fn attach_workspace_manager(
         }
     }
 
-    builder = builder.try_with_intent_classifier().await;
-
     let workspace_manager = match builder.build().await {
         Ok(m) => m,
         Err(e) => {

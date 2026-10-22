@@ -1,10 +1,8 @@
 use std::path::Path;
-use std::sync::Arc;
 
 use crate::{
     adapters::{secrets::SecretsManager, workspace::manager::WorkspaceManager},
     config::{ConfigBuilder, ConfigManager, OnMissing, Origin, ReadOnly, WorkingCopy},
-    intent::{IntentClassifier, IntentConfig},
 };
 use oxy_shared::errors::OxyError;
 
@@ -12,7 +10,6 @@ pub struct WorkspaceBuilder<S> {
     workspace_id: Option<uuid::Uuid>,
     config_manager: Option<ConfigManager<S>>,
     secrets_manager: Option<SecretsManager>,
-    intent_classifier: Option<Arc<IntentClassifier>>,
 }
 
 impl<S> Default for WorkspaceBuilder<S> {
@@ -21,7 +18,6 @@ impl<S> Default for WorkspaceBuilder<S> {
             workspace_id: None,
             config_manager: None,
             secrets_manager: None,
-            intent_classifier: None,
         }
     }
 }
@@ -32,27 +28,11 @@ impl<S> WorkspaceBuilder<S> {
             workspace_id: Some(workspace_id),
             config_manager: None,
             secrets_manager: None,
-            intent_classifier: None,
         }
     }
 
     pub fn with_secrets_manager(mut self, secret_manager: SecretsManager) -> Self {
         self.secrets_manager = Some(secret_manager);
-        self
-    }
-
-    pub async fn try_with_intent_classifier(mut self) -> Self {
-        let config = IntentConfig::from_env();
-        if !config.openai_api_key.is_empty() {
-            match IntentClassifier::new(config).await {
-                Ok(classifier) => {
-                    self.intent_classifier = Some(Arc::new(classifier));
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to create intent classifier: {}", e);
-                }
-            }
-        }
         self
     }
 
@@ -73,7 +53,6 @@ impl<S> WorkspaceBuilder<S> {
             workspace_id,
             config_manager,
             secret_manager,
-            self.intent_classifier,
         ))
     }
 }

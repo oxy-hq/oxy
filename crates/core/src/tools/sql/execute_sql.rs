@@ -91,7 +91,7 @@ impl SqlRunner {
         }
         .await;
         // Record SQL for metrics and emit tracing event
-        events::tool::add_sql(execution_context, &input.sql);
+        events::tool::add_sql(&input.sql);
 
         match result.as_mut() {
             Ok(table) => {

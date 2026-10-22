@@ -11,7 +11,6 @@ use crate::{
         Chunk, Event, EventKind, ProgressType, Source, Usage,
         event::{SandboxAppKind, SandboxInfo, Step},
     },
-    metrics::{MetricContext, SharedMetricCtx, SourceType},
 };
 use oxy_shared::errors::OxyError;
 
@@ -41,9 +40,6 @@ pub struct ExecutionContext {
     /// instead of always defaulting to least-privilege Reader. `None` for
     /// background runs and CLI/system paths that have no per-user identity.
     pub effective_role: Option<entity::workspace_members::WorkspaceRole>,
-    /// Metric collection context for tracking usage data
-    /// Flows through nested agent/automation executions via tokio::spawn
-    pub metric_context: Option<SharedMetricCtx>,
     /// Data app file path (for tools that need to read/write data apps) - set by tools/create_data_app and tools/edit_data_app
     pub data_app_file_path: Option<String>,
 }
@@ -66,7 +62,6 @@ impl ExecutionContext {
             sandbox_info: None,
             user_id,
             effective_role: None,
-            metric_context: None,
             data_app_file_path: None,
         }
     }
@@ -86,7 +81,6 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
             effective_role: self.effective_role.clone(),
-            metric_context: self.metric_context.clone(),
             data_app_file_path: self.data_app_file_path.clone(),
         }
     }
@@ -102,7 +96,6 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
             effective_role: self.effective_role.clone(),
-            metric_context: self.metric_context.clone(),
             data_app_file_path: self.data_app_file_path.clone(),
         }
     }
@@ -118,7 +111,6 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
             effective_role: self.effective_role.clone(),
-            metric_context: self.metric_context.clone(),
             data_app_file_path: self.data_app_file_path.clone(),
         }
     }
@@ -136,7 +128,6 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
             effective_role: self.effective_role.clone(),
-            metric_context: self.metric_context.clone(),
             data_app_file_path: self.data_app_file_path.clone(),
         }
     }
@@ -152,7 +143,6 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
             effective_role: self.effective_role.clone(),
-            metric_context: self.metric_context.clone(),
             data_app_file_path: self.data_app_file_path.clone(),
         }
     }
@@ -168,7 +158,6 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id,
             effective_role: self.effective_role.clone(),
-            metric_context: self.metric_context.clone(),
             data_app_file_path: self.data_app_file_path.clone(),
         }
     }
@@ -192,112 +181,7 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
             effective_role,
-            metric_context: self.metric_context.clone(),
             data_app_file_path: self.data_app_file_path.clone(),
-        }
-    }
-
-    /// Set the metric context for this execution
-    pub fn with_metric_context(&self, metric_context: SharedMetricCtx) -> Self {
-        ExecutionContext {
-            source: self.source.clone(),
-            writer: self.writer.clone(),
-            renderer: self.renderer.clone(),
-            workspace: self.workspace.clone(),
-            filters: self.filters.clone(),
-            connections: self.connections.clone(),
-            sandbox_info: self.sandbox_info.clone(),
-            user_id: self.user_id,
-            effective_role: self.effective_role.clone(),
-            metric_context: Some(metric_context),
-            data_app_file_path: self.data_app_file_path.clone(),
-        }
-    }
-
-    /// Create a child metric context for nested execution
-    ///
-    /// This creates a new MetricContext linked to the parent's trace_id.
-    /// Use this when spawning nested agents/automations.
-    pub fn with_child_metric_context(&self, source_type: SourceType, source_ref: &str) -> Self {
-        let child_ctx = if let Some(parent_ctx) = &self.metric_context {
-            if let Ok(guard) = parent_ctx.read() {
-                Some(guard.child(source_type, source_ref).shared())
-            } else {
-                Some(MetricContext::new(source_type, source_ref).shared())
-            }
-        } else {
-            Some(MetricContext::new(source_type, source_ref).shared())
-        };
-
-        ExecutionContext {
-            source: self.source.clone(),
-            writer: self.writer.clone(),
-            renderer: self.renderer.clone(),
-            workspace: self.workspace.clone(),
-            filters: self.filters.clone(),
-            connections: self.connections.clone(),
-            sandbox_info: self.sandbox_info.clone(),
-            user_id: self.user_id,
-            effective_role: self.effective_role.clone(),
-            metric_context: child_ctx,
-            data_app_file_path: self.data_app_file_path.clone(),
-        }
-    }
-
-    // Metric recording helpers
-
-    /// Record a SQL query in the metric context
-    pub fn record_sql(&self, sql: &str) {
-        if let Some(ctx) = &self.metric_context
-            && let Ok(mut guard) = ctx.write()
-        {
-            guard.add_sql(sql);
-        }
-    }
-
-    /// Record explicit metrics from semantic query parameters
-    pub fn record_explicit_metrics(
-        &self,
-        measures: &[String],
-        dimensions: &[String],
-        topic: Option<&str>,
-    ) {
-        if let Some(ctx) = &self.metric_context
-            && let Ok(mut guard) = ctx.write()
-        {
-            guard.add_explicit_metrics(measures, dimensions, topic);
-        }
-    }
-
-    /// Set the question/prompt in the metric context
-    pub fn record_question(&self, question: &str) {
-        if let Some(ctx) = &self.metric_context
-            && let Ok(mut guard) = ctx.write()
-        {
-            guard.set_question(question);
-        }
-    }
-
-    /// Set the response in the metric context
-    pub fn record_response(&self, response: &str) {
-        if let Some(ctx) = &self.metric_context
-            && let Ok(mut guard) = ctx.write()
-        {
-            guard.set_response(response);
-        }
-    }
-
-    /// Finalize and store the metric context
-    ///
-    /// This consumes the metric context from this execution context
-    /// and triggers async storage of collected metrics.
-    pub fn finalize_metrics(&self) {
-        if let Some(ctx) = &self.metric_context
-            && let Ok(guard) = ctx.read()
-        {
-            let context = guard.clone();
-            drop(guard);
-            context.finalize();
         }
     }
 
@@ -375,7 +259,6 @@ pub struct ExecutionContextBuilder {
     sandbox_info: Option<SandboxInfo>,
     user_id: Option<uuid::Uuid>,
     effective_role: Option<entity::workspace_members::WorkspaceRole>,
-    metric_context: Option<SharedMetricCtx>,
     data_app_file_path: Option<String>,
 }
 
@@ -397,7 +280,6 @@ impl ExecutionContextBuilder {
             sandbox_info: None,
             user_id: None,
             effective_role: None,
-            metric_context: None,
             data_app_file_path: None,
         }
     }
@@ -453,11 +335,6 @@ impl ExecutionContextBuilder {
         self
     }
 
-    pub fn with_metric_context(mut self, metric_context: SharedMetricCtx) -> Self {
-        self.metric_context = Some(metric_context);
-        self
-    }
-
     pub fn with_data_app_file_path(
         mut self,
         data_app_file_path: impl Into<Option<String>>,
@@ -490,7 +367,6 @@ impl ExecutionContextBuilder {
             sandbox_info: self.sandbox_info,
             user_id: self.user_id,
             effective_role: self.effective_role.clone(),
-            metric_context: self.metric_context,
             data_app_file_path: self.data_app_file_path,
         })
     }

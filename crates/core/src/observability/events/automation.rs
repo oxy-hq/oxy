@@ -125,16 +125,11 @@ pub mod launcher {
             );
         }
 
-        /// Record automation output event, track response in metrics, and finalize
+        /// Record automation output event
         pub fn output(
-            execution_context: &ExecutionContext,
+            _execution_context: &ExecutionContext,
             output: &crate::exec_types::OutputContainer,
         ) {
-            execution_context.record_response(&output.to_string());
-
-            // Finalize metrics (triggers async storage)
-            execution_context.finalize_metrics();
-
             event!(
                 Level::DEBUG,
                 name = OUTPUT,

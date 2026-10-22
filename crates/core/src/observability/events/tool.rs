@@ -1,7 +1,5 @@
 use tracing::{Level, event};
 
-use crate::exec_runtime::ExecutionContext;
-
 pub static NAME: &str = "tool.execute";
 pub static TYPE: &str = "tool";
 pub static INPUT: &str = "tool.input";
@@ -72,16 +70,6 @@ pub fn tool_call_input<T: serde::Serialize>(input: &T) {
     );
 }
 
-pub fn record_semantic_tool_call_metric(
-    execution_context: &ExecutionContext,
-    topic: &str,
-    query: &crate::service::types::SemanticQueryParams,
-) {
-    execution_context.record_explicit_metrics(&query.measures, &query.dimensions, Some(topic));
-}
-
-// Record explicit metrics via ExecutionContext
-
 pub fn tool_call_is_verified(is_verified: bool) {
     event!(
         Level::INFO,
@@ -112,15 +100,9 @@ pub fn tool_call_error(error: &str) {
     );
 }
 
-/// Record SQL execution for tracing and metrics collection.
-///
-/// Metric recording is unconditional. The tracing event is DEBUG so the
-/// full SQL doesn't repeat in console logs at INFO — observability backends
-/// still capture it via their own filter.
-pub fn add_sql(execution_context: &ExecutionContext, sql: &str) {
-    execution_context.record_sql(sql);
-
-    // Emit tracing event
+/// Trace SQL execution. DEBUG so the full SQL doesn't repeat in console logs
+/// at INFO — observability backends still capture it via their own filter.
+pub fn add_sql(sql: &str) {
     event!(
         Level::DEBUG,
         name = "tool.sql",
