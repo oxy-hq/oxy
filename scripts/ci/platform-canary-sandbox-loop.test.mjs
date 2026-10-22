@@ -106,7 +106,7 @@ test("an invocation row's id is under the key the listings serialize", () => {
   // find a call it made. The held route and the run detail call the same id
   // `invocation_id`; a row calls it `id`.
   const dto = readFileSync(
-    join(REPO, "crates/app/src/server/api/admin/apps/invocations.rs"),
+    join(REPO, "crates/api-custom-apps/src/admin/apps/invocations.rs"),
     "utf8"
   );
   const m = /pub struct InvocationSummary \{([\s\S]*?)\n\}/.exec(dto);
