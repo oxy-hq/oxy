@@ -92,6 +92,10 @@ impl SourceConnector for BoxedSourceConnector {
         self.0.sort_keys()
     }
 
+    fn records_load_watermark(&self) -> bool {
+        self.0.records_load_watermark()
+    }
+
     fn excluded_tables(&self) -> Vec<String> {
         self.0.excluded_tables()
     }
@@ -272,6 +276,10 @@ mod tests {
             HashMap::from([("orders".to_string(), SourceContract::immutable())])
         }
 
+        fn records_load_watermark(&self) -> bool {
+            true
+        }
+
         fn sandbox_base_url(&self) -> Option<&str> {
             Some(SANDBOX)
         }
@@ -402,6 +410,18 @@ mod tests {
             hints["orders"]["total"].data_type,
             Some(airway::types::DataType::Double),
             "the declared type must survive the box, not just the key"
+        );
+    }
+
+    /// A dropped forward resolves to the trait default (`false`), so a source
+    /// that records a load watermark (QuickBooks) writes no row to
+    /// `main._aw_table_watermarks` and nothing fails.
+    #[test]
+    fn box_forwards_records_load_watermark() {
+        let boxed = BoxedSourceConnector(Box::new(DeclaringConnector));
+        assert!(
+            boxed.records_load_watermark(),
+            "`records_load_watermark()` fell through to the trait default"
         );
     }
 
