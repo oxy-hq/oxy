@@ -9168,7 +9168,6 @@ dependencies = [
  "log",
  "lru 0.18.2",
  "minijinja",
- "omni",
  "once_cell",
  "oxy-auth",
  "oxy-compile",

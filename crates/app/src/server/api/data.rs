@@ -538,7 +538,7 @@ pub async fn build_embeddings(
 }
 
 async fn handle_omni_sync(workspace: &WorkspaceManager<WorkingCopy>) -> Result<(), OxyError> {
-    use crate::server::service::omni_sync::OmniSyncService;
+    use omni::sync::OmniSyncService;
     use omni::{OmniApiClient, OmniError as AdapterOmniError};
 
     let workspace_path = workspace.config_manager.workspace_path();

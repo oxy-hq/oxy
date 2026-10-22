@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use omni::{MetadataMerger, MetadataStorage, OmniApiClient, OmniError, TopicMetadata};
+use crate::{MetadataMerger, MetadataStorage, OmniApiClient, OmniError, TopicMetadata};
 
 /// Result of a full model synchronization operation
 ///

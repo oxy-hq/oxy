@@ -13,6 +13,7 @@ pub mod metadata;
 pub mod models;
 pub mod resilience;
 pub mod storage;
+pub mod sync;
 
 // Re-export main types for convenience
 pub use client::OmniApiClient;

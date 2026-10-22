@@ -1054,7 +1054,7 @@ pub async fn cli(
 }
 
 async fn handle_omni_sync() -> Result<(), OxyError> {
-    use crate::server::service::omni_sync::OmniSyncService;
+    use omni::sync::OmniSyncService;
     use omni::{OmniApiClient, OmniError as AdapterOmniError};
 
     // Load configuration to get Omni integration settings
