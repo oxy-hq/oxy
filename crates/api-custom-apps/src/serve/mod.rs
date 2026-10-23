@@ -54,6 +54,7 @@ use uuid::Uuid;
 
 use oxy_app_core::custom_app_env_request::request_environment;
 use oxy_app_core::custom_app_environment::AppEnvironment;
+use oxy_app_core::custom_domain_host::CustomDomainCtx;
 
 use oxy_app_core::function_seam::{FunctionQueryExecutor, FunctionRequest};
 use oxy_custom_apps::env_resolve::{EnvironmentBuilds, resolve_environment};
@@ -122,6 +123,9 @@ pub fn serve_dispatch_roles() -> &'static [RouteRoleDecl] {
 /// before they ever learn whether a given uuid is a real app.
 pub async fn serve_dispatch(Path(path): Path<String>, request: axum::extract::Request) -> Response {
     let (parts, body) = request.into_parts();
+    // Set by the host dispatcher when the request arrived on a verified
+    // customer-owned domain (`oxy_app_core::custom_domain_host`).
+    let custom_domain = parts.extensions.get::<CustomDomainCtx>().cloned();
     let headers = parts.headers;
     let uri = parts.uri;
     let method = parts.method;
@@ -164,6 +168,14 @@ pub async fn serve_dispatch(Path(path): Path<String>, request: axum::extract::Re
         }
     };
     let rest = rest_parts.next().unwrap_or("").to_string();
+
+    // A custom domain serves its own app and nothing else. The dispatcher only
+    // ever rewrites to that app, so this is the guard that keeps it so.
+    if let Some(domain) = &custom_domain
+        && (domain.org_slug != first || domain.app_slug != app_slug)
+    {
+        return no_store_404();
+    }
 
     // Oxy Functions route invocation: `POST .../fn/<name>`. Dispatched
     // before `serve_pretty`'s static-bundle logic — see
@@ -219,7 +231,22 @@ pub async fn serve_dispatch(Path(path): Path<String>, request: axum::extract::Re
         .await;
     }
 
-    serve_pretty(first, app_slug, rest, method, headers, uri, body).await
+    let request = ServeRequest {
+        method,
+        headers,
+        uri,
+        custom_domain,
+    };
+    serve_pretty(first, app_slug, rest, request, body).await
+}
+
+/// The request as the bundle path reads it.
+pub(crate) struct ServeRequest {
+    pub(crate) method: axum::http::Method,
+    pub(crate) headers: HeaderMap,
+    pub(crate) uri: Uri,
+    /// `Some` when the request arrived on a verified custom domain.
+    pub(crate) custom_domain: Option<CustomDomainCtx>,
 }
 
 /// The custom-app serve path, phase by phase.
@@ -258,12 +285,10 @@ pub(crate) async fn serve_pretty(
     org_slug: &str,
     app_slug: &str,
     rest: String,
-    method: axum::http::Method,
-    headers: HeaderMap,
-    uri: Uri,
+    request: ServeRequest,
     body: axum::body::Body,
 ) -> Response {
-    let ctx = match ServeContext::prepare(org_slug, app_slug, rest, method, headers, uri).await {
+    let ctx = match ServeContext::prepare(org_slug, app_slug, rest, request).await {
         Ok(ctx) => ctx,
         Err(answered) => return answered,
     };
@@ -290,6 +315,9 @@ struct ServeContext {
     headers: HeaderMap,
     uri: Uri,
     runtime: AppRuntimeConfig,
+    /// The app's own origin (a platform subdomain or a custom domain), where
+    /// the app owns `/`, as opposed to the product host's subpath.
+    on_app_host: bool,
 }
 
 impl ServeContext {
@@ -300,10 +328,14 @@ impl ServeContext {
         org_slug: &str,
         app_slug: &str,
         rest: String,
-        method: axum::http::Method,
-        headers: HeaderMap,
-        uri: Uri,
+        serve_request: ServeRequest,
     ) -> Result<Self, Response> {
+        let ServeRequest {
+            method,
+            headers,
+            uri,
+            custom_domain,
+        } = serve_request;
         let started = std::time::Instant::now();
         // 0. Which environment of the app this request addresses: the host
         //    label, or `X-Oxy-App-Env` on a bearer request. A header that
@@ -323,7 +355,17 @@ impl ServeContext {
             &environment,
         )
         .await
-        .map_err(|refusal| refuse(refusal, org_slug, app_slug, &rest, &headers, &uri, started))?;
+        .map_err(|refusal| {
+            let at = RefusedAt {
+                org_slug,
+                app_slug,
+                rest: &rest,
+                headers: &headers,
+                uri: &uri,
+                custom_domain: custom_domain.as_ref(),
+            };
+            refuse(refusal, at, started)
+        })?;
         // 3. The source facade. The per-app source is recorded at register
         //    time; a row still carrying a removed type (`v0`, `local`) fails to
         //    parse here and answers a recorded 500 — see `custom_apps_source`
@@ -340,6 +382,7 @@ impl ServeContext {
             &request.org.slug,
             &environment,
         );
+        let on_app_host = custom_domain.is_some() || on_custom_app_subdomain(&headers);
         Ok(Self {
             started,
             environment,
@@ -349,6 +392,7 @@ impl ServeContext {
             headers,
             uri,
             runtime,
+            on_app_host,
         })
     }
 
@@ -370,9 +414,9 @@ impl ServeContext {
         let app = &self.request.app;
         let user = &self.request.user;
         Some(match classify_reserved(name, &self.method) {
-            Reserved::ServiceWorker => service_worker_for(&self.runtime, &self.headers),
+            Reserved::ServiceWorker => service_worker_for(&self.runtime, self.on_app_host),
             Reserved::WebManifest => {
-                web_manifest_for(&self.request.db, &self.runtime, app, &self.headers).await
+                web_manifest_for(&self.request.db, &self.runtime, app, self.on_app_host).await
             }
             Reserved::MonogramIcon => monogram_icon_for(app),
             // Answered before view and SLI recording, like the beacon: a tab
@@ -561,7 +605,7 @@ impl ServeContext {
         let recorded_app = self.request.app.clone();
         let user_id = self.request.user.id;
         let user_email = self.request.user.email.clone();
-        let source_label = if on_custom_app_subdomain(headers) {
+        let source_label = if self.on_app_host {
             "subdomain"
         } else {
             "subpath"
@@ -587,15 +631,43 @@ impl ServeContext {
 /// flow picks it up), a credential naming nobody likewise, an unknown app is a
 /// `no_store_404`, and a 403 or a platform 500 against a known app is recorded
 /// for the SLI before it is answered.
-fn refuse(
-    refusal: Refusal,
-    org_slug: &str,
-    app_slug: &str,
-    rest: &str,
-    headers: &HeaderMap,
-    uri: &Uri,
-    started: std::time::Instant,
-) -> Response {
+/// Where a refusal happened: the request, as [`refuse`] needs it.
+struct RefusedAt<'a> {
+    org_slug: &'a str,
+    app_slug: &'a str,
+    rest: &'a str,
+    headers: &'a HeaderMap,
+    uri: &'a Uri,
+    custom_domain: Option<&'a CustomDomainCtx>,
+}
+
+impl RefusedAt<'_> {
+    /// An unauthenticated visitor: to the product login, or — on a custom
+    /// domain, which the login's cookie never reaches — into the sign-in
+    /// handoff, starting from the path the visitor asked for on the domain.
+    fn to_sign_in(&self) -> Response {
+        match self.custom_domain {
+            Some(domain) => {
+                let path = format!("/{}", self.rest);
+                let rest = match self.uri.query() {
+                    Some(q) => format!("{path}?{q}"),
+                    None => path,
+                };
+                crate::custom_domains::handoff::start(self.headers, domain, &rest)
+            }
+            None => redirect_to_login(self.headers, self.uri).into_response(),
+        }
+    }
+}
+
+fn refuse(refusal: Refusal, at: RefusedAt<'_>, started: std::time::Instant) -> Response {
+    let RefusedAt {
+        org_slug,
+        app_slug,
+        rest,
+        headers,
+        ..
+    } = at;
     match refusal {
         Refusal::Unauthenticated(error) => {
             // Surface auth failures so an operator can tell apart "no cookie"
@@ -621,9 +693,9 @@ fn refuse(
                 error = %error,
                 "auth failed, redirecting to login"
             );
-            redirect_to_login(headers, uri).into_response()
+            at.to_sign_in()
         }
-        Refusal::UnknownUser => redirect_to_login(headers, uri).into_response(),
+        Refusal::UnknownUser => at.to_sign_in(),
         Refusal::NotFound => no_store_404(),
         Refusal::Forbidden(denied) => {
             // A 403 is not an app fault and does not dent the SLI (see
@@ -870,12 +942,8 @@ fn classify_reserved(name: &str, method: &axum::http::Method) -> Reserved {
 /// app's worker claiming it would intercept the whole SPA. `runtime.js` computes
 /// the same answer client-side from the document's own path; this header is the
 /// half that holds if it ever gets it wrong.
-fn service_worker_for(runtime: &AppRuntimeConfig, headers: &HeaderMap) -> Response {
-    let allowed = if on_custom_app_subdomain(headers) {
-        "/"
-    } else {
-        &runtime.base_path
-    };
+fn service_worker_for(runtime: &AppRuntimeConfig, on_app_host: bool) -> Response {
+    let allowed = if on_app_host { "/" } else { &runtime.base_path };
     crate::client::service_worker_response(allowed)
 }
 
@@ -980,13 +1048,9 @@ async fn web_manifest_for(
     db: &DatabaseConnection,
     runtime: &AppRuntimeConfig,
     app: &entity::apps::Model,
-    headers: &HeaderMap,
+    on_app_host: bool,
 ) -> Response {
-    let page_scope = if on_custom_app_subdomain(headers) {
-        "/"
-    } else {
-        &runtime.base_path
-    };
+    let page_scope = if on_app_host { "/" } else { &runtime.base_path };
 
     let icons = manifest_icons_for(db, app, &runtime.base_path).await;
 
@@ -1100,12 +1164,12 @@ async fn ingest_beacon(
     .await
 }
 
-/// Did this request arrive on a `<org>--<app>.customer-apps…` host?
-///
-/// One reader for a fact two places need — the recorded view's `source` label
-/// and the service worker's permitted scope. They must not be able to disagree:
-/// the label is cosmetic, but the scope decides whether a custom app's worker
-/// may claim the admin origin.
+/// Did this request arrive on a `<org>--<app>.customer-apps…` host? Read once,
+/// in [`ServeContext::prepare`], into `on_app_host` (with a custom domain,
+/// which is the same kind of origin) — one fact for the recorded view's
+/// `source` label, the service worker's scope and the manifest's. They must not
+/// be able to disagree: the label is cosmetic, but the scope decides whether a
+/// custom app's worker may claim the admin origin.
 fn on_custom_app_subdomain(headers: &HeaderMap) -> bool {
     oxy_app_core::custom_apps_host_dispatch::parse_subdomain(
         headers

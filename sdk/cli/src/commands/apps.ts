@@ -1,7 +1,8 @@
 /**
  * `oxyc apps list | show | builds | health | usage` — what custom apps are
  * registered on a deployment, what each is serving, and how it is doing.
- * (`oxyc apps drift` is in `apps-drift.ts`.)
+ * (`oxyc apps drift` is in `apps-drift.ts`; `oxyc apps domains`, the one part
+ * of `apps` that writes, is in `apps-domains.ts`.)
  *
  * Read-only: every request here is a GET.
  *

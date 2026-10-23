@@ -24,6 +24,7 @@ pub mod compiled_reader;
 pub mod custom_app_env_request;
 pub mod custom_app_environment;
 pub mod custom_apps_host_dispatch;
+pub mod custom_domain_host;
 pub mod customer_runs;
 pub mod default_branch;
 pub mod forwarded;

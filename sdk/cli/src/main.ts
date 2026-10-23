@@ -30,6 +30,12 @@ import {
   runAppsShow,
   runAppsUsage
 } from "./commands/apps.js";
+import {
+  runAppsDomainsAdd,
+  runAppsDomainsList,
+  runAppsDomainsRemove,
+  runAppsDomainsVerify
+} from "./commands/apps-domains.js";
 import { runAppsDrift } from "./commands/apps-drift.js";
 import { runAssumeEnd, runAssumeStart, runAssumeStatus } from "./commands/assume.js";
 import { runLogin, runLogout, runToken, runWhoami } from "./commands/auth.js";
@@ -978,6 +984,49 @@ function buildProgram(): Command {
       refresh: opts.refresh as boolean | undefined,
       json: opts.json as boolean | undefined
     });
+  });
+
+  // `domains` is a group whose default verb is `list`, so `oxyc apps domains
+  // <app>` lists and `add | verify | remove` name the write. The group takes no
+  // options of its own; every verb carries the globals.
+  const domains = apps
+    .command("domains")
+    .description("custom domains an app is served on: list, add, verify, remove");
+
+  withGlobals(
+    domains
+      .command("list <app>", { isDefault: true })
+      .description("an app's domains, their status and the DNS records still to create")
+      .option("--json", "emit the server's response")
+  ).action(async (app: string, opts: Record<string, unknown>) => {
+    await runAppsDomainsList(createContext(globals(opts)), app, Boolean(opts.json));
+  });
+
+  withGlobals(
+    domains
+      .command("add <app> <domain>")
+      .description("serve an app on a domain you own; prints the DNS records to create")
+      .option("--json", "emit the new domain and the CNAME target as JSON")
+  ).action(async (app: string, domain: string, opts: Record<string, unknown>) => {
+    await runAppsDomainsAdd(createContext(globals(opts)), app, domain, Boolean(opts.json));
+  });
+
+  withGlobals(
+    domains
+      .command("verify <app> <domain>")
+      .description("check a domain's DNS now; exits non-zero while it is still pending")
+      .option("--json", "emit the domain's state as JSON")
+  ).action(async (app: string, domain: string, opts: Record<string, unknown>) => {
+    await runAppsDomainsVerify(createContext(globals(opts)), app, domain, Boolean(opts.json));
+  });
+
+  withGlobals(
+    domains
+      .command("remove <app> <domain>")
+      .description("stop serving an app on a domain")
+      .option("--json", "emit the removed domain as JSON")
+  ).action(async (app: string, domain: string, opts: Record<string, unknown>) => {
+    await runAppsDomainsRemove(createContext(globals(opts)), app, domain, Boolean(opts.json));
   });
 
   const invocations = program

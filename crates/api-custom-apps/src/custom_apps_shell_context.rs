@@ -146,13 +146,13 @@ impl ShellContextQuery {
 /// at the admin host absolutely. Falls back to relative when
 /// `OXY_API_URL` isn't configured (local/dev) — the links may not
 /// resolve there, but that beats fabricating a host.
-fn product_url_base(headers: &HeaderMap) -> String {
+fn product_url_base(headers: &HeaderMap, on_custom_domain: bool) -> String {
     let on_app_subdomain = headers
         .get(header::HOST)
         .and_then(|v| v.to_str().ok())
         .and_then(parse_subdomain)
         .is_some();
-    if on_app_subdomain {
+    if on_app_subdomain || on_custom_domain {
         admin_base_url().unwrap_or_default()
     } else {
         String::new()
@@ -182,6 +182,7 @@ async fn owning_org(ctx: &CustomAppContext) -> Result<entity::organizations::Mod
 pub async fn get_shell_context(
     Path(project_id): Path<Uuid>,
     axum::extract::Query(query): axum::extract::Query<ShellContextQuery>,
+    on_domain: Option<axum::Extension<oxy_app_core::custom_domain_host::CustomDomainCtx>>,
     headers: HeaderMap,
 ) -> Response {
     // Gates first — same chain as /query. Nothing below runs (and nothing
@@ -207,7 +208,7 @@ pub async fn get_shell_context(
         }
     };
 
-    let base = product_url_base(&headers);
+    let base = product_url_base(&headers, on_domain.is_some());
     let apps = summaries
         .into_iter()
         .map(|s| ShellApp {
@@ -254,7 +255,13 @@ pub async fn get_shell_context(
             // Same default section the web-app rail user menu opens for
             // cloud viewers; invalid sections fall back SPA-side anyway.
             settings: format!("{ws_root}/home?settings=organization.general"),
-            login: format!("{base}/login"),
+            // On a custom domain the product login cannot come back to the
+            // domain; the app's own root starts the domain's sign-in, which
+            // passes through that login.
+            login: match on_domain {
+                Some(_) => "/".to_string(),
+                None => format!("{base}/login"),
+            },
         },
         user: Some(ShellUser {
             name: ctx.user.name.clone(),
@@ -294,7 +301,7 @@ mod tests {
     #[test]
     fn relative_base_on_main_host() {
         assert_eq!(
-            product_url_base(&headers_with_host("app.oxygen-hq.com")),
+            product_url_base(&headers_with_host("app.oxygen-hq.com"), false),
             ""
         );
     }
@@ -303,14 +310,14 @@ mod tests {
     fn relative_base_on_org_subdomain() {
         // Org subdomains serve the full SPA — links stay same-origin.
         assert_eq!(
-            product_url_base(&headers_with_host("acme.oxygen-hq.com")),
+            product_url_base(&headers_with_host("acme.oxygen-hq.com"), false),
             ""
         );
     }
 
     #[test]
     fn relative_base_without_host_header() {
-        assert_eq!(product_url_base(&HeaderMap::new()), "");
+        assert_eq!(product_url_base(&HeaderMap::new(), false), "");
     }
 
     #[test]
@@ -320,9 +327,10 @@ mod tests {
         // Host-header classification path is taken (empty base when
         // OXY_API_URL is unset, but the subdomain IS detected — the
         // fallback keeps links relative rather than inventing a host).
-        let base = product_url_base(&headers_with_host(
-            "acme--sales.customer-apps-dev.oxygen-hq.com",
-        ));
+        let base = product_url_base(
+            &headers_with_host("acme--sales.customer-apps-dev.oxygen-hq.com"),
+            false,
+        );
         // With OXY_API_URL unset in the test env this is the fallback "";
         // with it set it must be an absolute origin.
         if !base.is_empty() {

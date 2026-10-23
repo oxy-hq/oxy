@@ -208,7 +208,7 @@ pub fn subdomain_url_for(org_slug: &str, app_slug: &str) -> Option<String> {
 ///
 /// A custom-branded host with neither variable set gets `None`; subdomain
 /// URLs are simply not surfaced.
-fn custom_apps_zone() -> Option<String> {
+pub(crate) fn custom_apps_zone() -> Option<String> {
     if let Ok(z) = std::env::var("OXY_CUSTOM_APPS_ZONE") {
         let z = z.trim().trim_start_matches('.').trim_end_matches('.');
         if !z.is_empty() {
@@ -271,9 +271,39 @@ pub async fn subdomain_rewrite_middleware(request: Request, next: Next) -> Respo
         return next.run(request).await;
     };
     let Some((org, slug)) = parse_subdomain(host) else {
+        return custom_domain_dispatch(request, next).await;
+    };
+    rewrite_to_app(request, next, &org, &slug).await
+}
+
+/// A request on a customer-owned hostname: when it is a verified custom domain
+/// (`crate::custom_domain_host`), attach the [`CustomDomainCtx`] and serve it as
+/// the app's subdomain would be served. Any other host passes through untouched
+/// — the product host takes the zone check in [`candidate_host`] and never
+/// reaches the lookup.
+///
+/// [`CustomDomainCtx`]: crate::custom_domain_host::CustomDomainCtx
+/// [`candidate_host`]: crate::custom_domain_host::candidate_host
+async fn custom_domain_dispatch(mut request: Request, next: Next) -> Response {
+    let Some(candidate) = request
+        .headers()
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .and_then(crate::custom_domain_host::candidate_host)
+    else {
         return next.run(request).await;
     };
+    let Some(ctx) = crate::custom_domain_host::resolve(&candidate).await else {
+        return next.run(request).await;
+    };
+    let (org, slug) = (ctx.org_slug.clone(), ctx.app_slug.clone());
+    request.extensions_mut().insert(ctx);
+    rewrite_to_app(request, next, &org, &slug).await
+}
 
+/// Rewrite a request on an app's own host (platform subdomain or custom domain)
+/// to the path-prefix form, leaving `/api/*` and an already-prefixed path alone.
+async fn rewrite_to_app(request: Request, next: Next, org: &str, slug: &str) -> Response {
     // Bundle SDK calls land on the data API, NOT on the upstream
     // Vercel. Keep `/api/*` requests untouched even on a subdomain
     // host so the normal `/api/*` router handles them.
@@ -286,7 +316,7 @@ pub async fn subdomain_rewrite_middleware(request: Request, next: Next) -> Respo
     // `/customer-apps/<org>/<slug>/...` for THIS subdomain's
     // (org, slug) pair, pass it through unchanged — see
     // [`already_canonicalized`] for the rationale.
-    if already_canonicalized(original_path, &org, &slug) {
+    if already_canonicalized(original_path, org, slug) {
         return next.run(request).await;
     }
 

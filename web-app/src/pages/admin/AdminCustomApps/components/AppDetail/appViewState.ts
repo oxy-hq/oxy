@@ -35,6 +35,7 @@ export type SectionId =
   | "activity"
   | "environments"
   | "publishers"
+  | "domains"
   | "settings";
 
 export interface AppViewState {
@@ -67,6 +68,7 @@ const SECTIONS: readonly SectionId[] = [
   "activity",
   "environments",
   "publishers",
+  "domains",
   "settings"
 ];
 

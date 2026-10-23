@@ -446,6 +446,13 @@ nobody the plan.
   `oxyc apps builds <org>/<app>` is the history. `oxyc apps drift <org>/<app>`
   lists the commits in your checkout that touch the app after the live build's
   commit — `unknown` there means it could not compare, not that nothing changed.
+- **A customer's own domain** (`app.acme.com`) serves production only:
+  `oxyc apps domains add <org>/<app> app.acme.com` prints a CNAME and a TXT
+  record for the customer to create, then `oxyc apps domains verify …`. Build
+  nothing differently — the bundle keeps its `/customer-apps/<org>/<app>/` base
+  and its same-origin `/api` calls work on the domain. A visitor signs in once
+  through the Oxygen login; on that domain the session reaches only the app's
+  workspace, so a call to another workspace there is refused by design.
 
 The build is not the check: after a publish, drive the page
 ([references/verifying-in-the-browser.md](references/verifying-in-the-browser.md)).

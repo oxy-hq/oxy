@@ -682,6 +682,8 @@ const customAppKeys = {
   environments: (id: string) => ["customApps", "environments", id] as const,
   /** The GitHub workflows allowed to OIDC-publish this app. */
   publishers: (id: string) => ["customApps", "publishers", id] as const,
+  /** The customer-owned domains the app is served on, with the CNAME target. */
+  domains: (id: string) => ["customApps", "domains", id] as const,
   /** The curated scaffold templates the create dialog offers. Deployment-wide. */
   templates: () => ["customApps", "templates"] as const,
   // Storage: fleet rollup vs per-app live S3 listing (two sources, two keys).

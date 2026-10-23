@@ -10,6 +10,7 @@ import { AppAccessPane } from "../AppDetail/components/AppAccessPane";
 import { AppInfo } from "../AppDetail/components/AppInfo";
 import { Availability } from "../AppDetail/components/Availability";
 import { RetainedBuilds } from "../AppDetail/components/BuildHistory/RetainedBuilds";
+import { CustomDomains } from "../AppDetail/components/CustomDomains";
 import { Environments } from "../AppDetail/components/Environments";
 import { Functions } from "../AppDetail/components/Functions";
 import { Publishers } from "../AppDetail/components/Publishers";
@@ -203,6 +204,10 @@ export const AppConsole = ({ app }: { app: CustomApp }) => {
               question='Q2 — production, staging, sandboxes'
             >
               <Environments appId={app.id} />
+            </ConsolePanel>
+
+            <ConsolePanel id='domains' title='Custom domains'>
+              <CustomDomains appId={app.id} />
             </ConsolePanel>
 
             <ConsolePanel id='identity' title='Identity & manifest'>

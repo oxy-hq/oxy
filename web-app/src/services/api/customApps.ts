@@ -12,6 +12,8 @@ import type {
   CustomApp,
   CustomAppDebug,
   CustomAppSummary,
+  CustomDomain,
+  CustomDomainsResponse,
   FleetHealthResponse,
   FunctionInvocation,
   FunctionLogLine,
@@ -496,6 +498,35 @@ export const CustomAppsService = {
 
   async deletePublisher(id: string, publisherId: string): Promise<void> {
     await apiClient.delete(`${appPath(id)}/publishers/${encodeURIComponent(publisherId)}`);
+  },
+
+  // ── Custom domains ───────────────────────────────────────────────────────
+
+  /** The customer-owned domains this app is served on, and the CNAME target they point at. */
+  async listDomains(id: string): Promise<CustomDomainsResponse> {
+    const response = await apiClient.get(`${appPath(id)}/domains`);
+    return response.data;
+  },
+
+  /** Claim a domain. 400 `invalid_domain`, 409 `domain_exists`. */
+  async addDomain(id: string, domain: string): Promise<CustomDomain> {
+    const response = await apiClient.post(`${appPath(id)}/domains`, { domain });
+    return response.data;
+  },
+
+  /**
+   * Look for the TXT record. 200 either way: a domain still `pending` carries
+   * `last_check_error` saying why. 409 `domain_taken` when another app verified it first.
+   */
+  async verifyDomain(id: string, domainId: string): Promise<CustomDomain> {
+    const response = await apiClient.post(
+      `${appPath(id)}/domains/${encodeURIComponent(domainId)}/verify`
+    );
+    return response.data;
+  },
+
+  async removeDomain(id: string, domainId: string): Promise<void> {
+    await apiClient.delete(`${appPath(id)}/domains/${encodeURIComponent(domainId)}`);
   },
 
   // ── Templates ────────────────────────────────────────────────────────────

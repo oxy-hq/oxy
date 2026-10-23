@@ -16,6 +16,7 @@ vi.mock("../AppSettings", () => ({ AppSettings: () => null }));
 vi.mock("../Availability", () => ({ Availability: () => null }));
 vi.mock("../BuildHistory", () => ({ BuildHistory: () => null }));
 vi.mock("../../../AppLifecycle", () => ({ AppLifecycle: () => null }));
+vi.mock("../CustomDomains", () => ({ CustomDomains: () => null }));
 vi.mock("../Environments", () => ({ Environments: () => null }));
 vi.mock("../Publishers", () => ({ Publishers: () => null }));
 vi.mock("../Releases", () => ({ Releases: () => <div data-testid='admin-app-releases' /> }));

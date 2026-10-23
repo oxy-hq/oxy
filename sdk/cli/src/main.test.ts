@@ -244,10 +244,10 @@ describe("exit codes", () => {
 });
 
 describe("apps", () => {
-  it("is a command group with its six read-only subcommands", () => {
+  it("is a command group with its seven subcommands", () => {
     const r = oxyc("apps", "--help");
     expect(r.status).toBe(ExitCode.OK);
-    for (const sub of ["list", "show", "builds", "health", "usage", "drift"]) {
+    for (const sub of ["list", "show", "builds", "health", "usage", "drift", "domains"]) {
       expect(r.stdout, `apps --help never mentions ${sub}`).toMatch(
         new RegExp(`^  ${sub}\\b`, "m")
       );
@@ -269,10 +269,36 @@ describe("apps", () => {
       expect(r.status, `apps ${sub}`).toBe(ExitCode.USAGE);
       expect(r.stderr).toMatch(/does not name an app/);
     }
+    // `domains` lists by default, so its bare form takes <app> too.
+    for (const args of [
+      ["domains", "not-an-app-reference"],
+      ["domains", "list", "not-an-app-reference"],
+      ["domains", "add", "not-an-app-reference", "app.acme.com"],
+      ["domains", "verify", "not-an-app-reference", "app.acme.com"],
+      ["domains", "remove", "not-an-app-reference", "app.acme.com"]
+    ]) {
+      const r = oxyc("apps", ...args);
+      expect(r.status, `apps ${args.join(" ")}`).toBe(ExitCode.USAGE);
+      expect(r.stderr).toMatch(/does not name an app/);
+    }
+    expect(oxyc("apps", "domains").status).toBe(ExitCode.USAGE); // missing <app>
+    expect(oxyc("apps", "domains", "add", "acme/store").status).toBe(ExitCode.USAGE);
+    expect(oxyc("apps", "domains", "add", "acme/store", "https://app.acme.com/").status).toBe(
+      ExitCode.USAGE
+    );
   });
 
   it("reports a missing credential as AUTH, with the login command", () => {
-    for (const args of [["list"], ["show", "acme/store"], ["health"], ["drift"]]) {
+    for (const args of [
+      ["list"],
+      ["show", "acme/store"],
+      ["health"],
+      ["drift"],
+      ["domains", "acme/store"],
+      ["domains", "add", "acme/store", "app.acme.com"],
+      ["domains", "verify", "acme/store", "app.acme.com"],
+      ["domains", "remove", "acme/store", "app.acme.com"]
+    ]) {
       const r = oxyc("apps", ...args, "--env", "production");
       expect(r.status, `apps ${args.join(" ")}`).toBe(ExitCode.AUTH);
       expect(r.stderr).toMatch(/oxyc login/);

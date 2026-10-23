@@ -615,6 +615,15 @@ pub(super) async fn delete_one(db: &DatabaseConnection, id: Uuid) -> Result<(), 
         );
     }
 
+    // The domain rows go with the app (`ON DELETE CASCADE`); the sessions
+    // opened on them are tokens, which would not. Best-effort, as above: a
+    // leftover token lapses within twelve hours and reaches only the workspace.
+    use oxy_custom_apps::custom_domains::session::{revoke_for_app, revoke_reason};
+    match revoke_for_app(db, id, None, revoke_reason::APP_DELETED).await {
+        // Not in a transaction: the revoke has committed, so forget at once.
+        Ok(revoked) => revoked.forget(),
+        Err(e) => tracing::warn!("delete_one {id}: custom-domain sessions not revoked: {e}"),
+    }
     row.delete(db).await.map_err(|_| AppOpError::internal())?;
     // A cached slug→row resolution would keep serving a deleted app until the
     // TTL expired. Drop it before returning.

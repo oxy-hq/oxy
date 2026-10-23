@@ -73,6 +73,7 @@ pub mod api_tokens;
 pub mod app_admin_scope_orgs;
 pub mod app_admins;
 pub mod app_builds;
+pub mod app_custom_domains;
 pub mod app_email_sends;
 pub mod app_environment_events;
 pub mod app_environment_tails;

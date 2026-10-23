@@ -726,3 +726,32 @@ export interface ClientError {
   first_seen: string;
   last_seen: string;
 }
+
+/** Whether the customer has proven they own the domain (`DomainView.status`). */
+export type CustomDomainStatus = "pending" | "verified";
+
+/** One customer-owned domain an app is served on (`DomainView`). */
+export interface CustomDomain {
+  id: string;
+  /** `app.acme.com` */
+  domain: string;
+  status: CustomDomainStatus;
+  /** `https://app.acme.com/` — where the app is served once verified. */
+  url: string;
+  /** The TXT record's name: `_oxygen-challenge.app.acme.com`. */
+  txt_name: string;
+  /** The TXT record's value: `oxygen-verification=<token>`. */
+  txt_value: string;
+  verified_at: string | null;
+  last_checked_at: string | null;
+  /** Why the last verify left it pending (e.g. TXT record not found). */
+  last_check_error: string | null;
+  created_at: string;
+}
+
+/** `GET /customer-apps/{id}/domains`. */
+export interface CustomDomainsResponse {
+  domains: CustomDomain[];
+  /** The host the customer's CNAME must point at; null until ops configure one. */
+  cname_target: string | null;
+}

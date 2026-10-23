@@ -117,7 +117,7 @@ in the browser, and it is printed once and stored nowhere.
 
 ## Custom apps: what is live, healthy, used
 
-Read-only — every request is a GET. `<app>` is `<org-slug>/<app-slug>` or an
+Read-only except `domains` (below) — every other request is a GET. `<app>` is `<org-slug>/<app-slug>` or an
 app UUID; each command takes `--json`.
 
     oxyc apps list [--org <slug>] [--published|--draft] [--builds]   # every app you can see
@@ -126,6 +126,13 @@ app UUID; each command takes `--json`.
     oxyc apps health [<app>]       # fleet table (--needs-attention), or one app's checks and errors
     oxyc apps usage <app>          # views, visitors, tracked events over 7 days
     oxyc apps drift [<app>]        # commits in a LOCAL checkout after the live build's commit
+    oxyc apps domains <app>        # custom domains: status, and the DNS records still to create
+
+`oxyc apps domains add|verify|remove <app> <domain>` is the one part of `apps`
+that writes: it serves an app on a domain the customer owns (`app.acme.com`).
+`add` prints the CNAME and TXT records to create; `verify` re-checks DNS and
+exits `1` while the domain is still `pending` (the checker's reason is printed)
+— retry it after the records propagate, do not treat it as a hard failure.
 
 - Use these rather than `oxyc api api/customer-apps…` by hand: they walk the
   paged listing to its end and resolve `<org>/<app>` to the id the routes take.

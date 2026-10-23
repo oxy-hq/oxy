@@ -735,8 +735,9 @@ server's plan verbatim.
 
 ## Apps
 
-Read-only: every request these make is a GET, against `/api/customer-apps/**`
-(the app-admin role). `<app>` is `<org-slug>/<app-slug>` or an app UUID.
+Read-only except `domains add | verify | remove`: every other request these make
+is a GET, against `/api/customer-apps/**` (the app-admin role). `<app>` is
+`<org-slug>/<app-slug>` or an app UUID.
 
 ```bash
 oxyc apps list [--org <slug>] [--published | --draft] [--builds] [--json]
@@ -745,6 +746,10 @@ oxyc apps builds <app> [--json]
 oxyc apps health [<app>] [--needs-attention] [--json]
 oxyc apps usage <app> [--json]
 oxyc apps drift [<app>] [--org <slug>] [--dir <path>] [--refresh] [--json]
+oxyc apps domains [list] <app> [--json]
+oxyc apps domains add <app> <domain> [--json]
+oxyc apps domains verify <app> <domain> [--json]
+oxyc apps domains remove <app> <domain> [--json]
 ```
 
 - **`list`** — every app you can see, across organizations, walking the paged
@@ -767,6 +772,7 @@ oxyc apps drift [<app>] [--org <slug>] [--dir <path>] [--refresh] [--json]
   of the last 24 hours.
 - **`usage`** — the 7-day summary, the visitors, and the tracked events by name.
 - **`drift`** — see below.
+- **`domains`** — see [Custom domains](#custom-domains).
 
 Times are UTC. `--json` prints one document on stdout; a table goes to stdout and
 the count line to stderr.
@@ -782,6 +788,39 @@ a drifted app is an answer and exits `0` — read it from the output.
 
 The health route answers **503 with its report** when a check fails; `oxyc`
 prints that as a failing report, not as an outage.
+
+### Custom domains
+
+Serve an app on a domain the customer owns (`app.acme.com`) instead of its Oxy
+subdomain. `<domain>` is a bare host name; `verify` and `remove` find the row by
+that name (case-insensitive), so you never handle the domain's id.
+
+```bash
+oxyc apps domains acme/store                         # list (the default verb)
+oxyc apps domains add acme/store app.acme.com        # then create the two DNS records it prints
+oxyc apps domains verify acme/store app.acme.com
+oxyc apps domains remove acme/store app.acme.com
+```
+
+- **`list`** — each domain's `STATUS` (`pending` or `verified`), its URL and
+  when it was last checked. For every `pending` domain it prints the DNS records
+  to create — a `CNAME` from the domain to the deployment's target (a note to
+  ask Oxy ops when the deployment has none configured) and a `TXT` ownership
+  record — plus the checker's last error, if any.
+- **`add`** — registers the domain as `pending` and prints the same two records
+  and the `verify` command to run next. A malformed name is `400
+  invalid_domain` and a duplicate `409 domain_exists`; both exit `6` with the
+  server's message.
+- **`verify`** — checks DNS now. `verified` prints the URL and exits `0`. Still
+  `pending` is **not** success: it prints the records again and the checker's
+  reason, and exits `1` — DNS may not have propagated, so re-run it. `409
+  domain_taken` (another app already serves the domain) exits `6`.
+- **`remove`** — stops serving the app on that domain. A name the app does not
+  have exits `5` and deletes nothing.
+
+`--json` prints one document on stdout: `{app, app_id, domains, cname_target}`
+for `list`, and `{app, app_id, domain, cname_target}` for `add` and `verify`
+(`verify` still exits `1` while pending).
 
 ### `apps drift`
 

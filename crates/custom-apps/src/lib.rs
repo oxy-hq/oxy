@@ -38,6 +38,8 @@
 //!   verdict) and the context it resolves; `oxy-app` keeps the request-facing entry.
 //! - `call_trace`, `call_trace_store`: every `ctx.*` call of one function
 //!   invocation as a timed record (the console's waterfall), and its table.
+//! - `custom_domains`: customer-owned hostnames for an app — claim, DNS proof,
+//!   removal — and the sign-in handoff that gives a browser a session on one.
 //! - `updates`: how a long-open tab picks up a new build (the platform mode,
 //!   an app's `autoUpdate`, the `/fn` build handshake headers).
 
@@ -57,6 +59,7 @@ pub mod bundle_cache;
 pub mod cache;
 pub mod call_trace;
 pub mod call_trace_store;
+pub mod custom_domains;
 pub mod env_resolve;
 pub mod environments;
 pub mod function_trigger;

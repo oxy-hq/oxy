@@ -39,6 +39,11 @@ pub const REFUSED_WRITES: &[(&str, &str)] = &[
     // Sends as the app to the caller. A sandbox agent is not the person a
     // console test is for, and sends nothing as an app outside its sandbox.
     ("POST", "/customer-apps/{id}/notification-test"),
+    // Which customer-owned hostnames serve the app's production, and the DNS
+    // proof behind one: an org's configuration, not the sandbox loop's.
+    ("POST", "/customer-apps/{id}/domains"),
+    ("DELETE", "/customer-apps/{id}/domains/{domain_id}"),
+    ("POST", "/customer-apps/{id}/domains/{domain_id}/verify"),
     ("POST", "/admin/app-publish-tokens"),
     ("POST", "/admin/app-publish-tokens/{id}/revoke"),
 ];

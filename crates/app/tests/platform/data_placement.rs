@@ -141,6 +141,10 @@ const TABLES: &[(&str, Placement)] = &[
         "app_builds",
         Control("custom-app build pointers; bundles live in S3"),
     ),
+    (
+        "app_custom_domains",
+        Control("which app a customer-owned hostname routes to, and its DNS proof; no content"),
+    ),
     ("app_definitions", Control("compiled .app.yml")),
     (
         "app_email_sends",

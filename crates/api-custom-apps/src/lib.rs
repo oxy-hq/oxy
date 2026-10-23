@@ -85,6 +85,7 @@ pub mod custom_apps_staging_held;
 pub mod custom_apps_tail;
 pub mod custom_apps_threads;
 pub mod custom_apps_validate;
+pub mod custom_domains;
 pub mod function_runtime;
 pub mod health;
 pub mod html_cache;
@@ -441,6 +442,23 @@ pub fn public_routes() -> Router<AppState> {
         // Trusted-publishing OIDC exchange — unauthenticated by construction: the
         // GitHub Actions OIDC JWT in the Authorization header IS the credential.
         // Returns a short-lived, app-scoped publish token.
+        // Custom domains: the sign-in handoff (authorize on the product host,
+        // session on the custom domain — each checks which host it is on) and
+        // the TLS edge's "may I issue for this name?". Each is a browser
+        // navigation or an edge probe that authenticates inline or not at all;
+        // all Postgres reads behind the resolver cache, so FleetOk.
+        .route(
+            "/custom-domains/authorize",
+            get(custom_domains::handoff::authorize),
+        )
+        .route(
+            "/custom-domains/session",
+            get(custom_domains::handoff::session),
+        )
+        .route(
+            "/custom-domains/tls-ask",
+            get(custom_domains::handoff::tls_ask),
+        )
         .route(
             "/customer-apps/publish/oidc-exchange",
             post(custom_apps_publish_oidc::oidc_exchange_handler),
@@ -525,6 +543,9 @@ pub fn public_route_roles() -> &'static [RouteRoleDecl] {
         fleet("/customer-apps/health"),
         fleet("/customer-apps/{org_slug}/{app_slug}/logs"),
         fleet("/customer-apps/{org_slug}/{app_slug}/errors"),
+        fleet("/custom-domains/authorize"),
+        fleet("/custom-domains/session"),
+        fleet("/custom-domains/tls-ask"),
         fleet("/customer-apps/publish/oidc-exchange"),
         fleet("/webhooks/apps/{org_slug}/{app_slug}/{function_name}"),
         fleet("/webhooks/apps-env/{environment}/{org_slug}/{app_slug}/{function_name}"),

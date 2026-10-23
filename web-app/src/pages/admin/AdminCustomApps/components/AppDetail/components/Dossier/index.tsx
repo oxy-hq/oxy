@@ -26,6 +26,7 @@ import { AppLogs } from "../AppLogs";
 import { AppSettings } from "../AppSettings";
 import { Availability } from "../Availability";
 import { RetainedBuilds } from "../BuildHistory/RetainedBuilds";
+import { CustomDomains } from "../CustomDomains";
 import { Environments } from "../Environments";
 import { Functions } from "../Functions";
 import { Issues, IssuesBadge } from "../Issues";
@@ -73,6 +74,7 @@ const DEFAULT_OPEN: Record<SectionId, boolean> = {
   // incident.
   environments: false,
   publishers: false,
+  domains: false,
   settings: false
 };
 
@@ -260,6 +262,11 @@ export const DossierBody = ({
         <DossierSection {...section("publishers")} title='Trusted publishers'>
           <div className='p-4 pt-0'>
             <Publishers appId={app.id} />
+          </div>
+        </DossierSection>
+        <DossierSection {...section("domains")} title='Custom domains'>
+          <div className='p-4 pt-0'>
+            <CustomDomains appId={app.id} />
           </div>
         </DossierSection>
         <DossierSection {...section("settings")} title='Settings'>

@@ -8,6 +8,7 @@ use oxy_auth::user::UserService;
 use serde::Serialize;
 
 use crate::server::api::auth::clear_session_cookie;
+use oxy_app_core::custom_domain_host::CustomDomainCtx;
 use utoipa::ToSchema;
 
 /// Global profile fields returned by `GET /user`. Role and admin status are
@@ -161,10 +162,22 @@ async fn partner_memberships_for(user: &AuthenticatedUser) -> Vec<PartnerMembers
         .collect()
 }
 
-pub async fn logout() -> Result<(HeaderMap, Json<LogoutResponse>), StatusCode> {
+pub async fn logout(
+    request_headers: HeaderMap,
+    on_domain: Option<axum::Extension<CustomDomainCtx>>,
+) -> Result<(HeaderMap, Json<LogoutResponse>), StatusCode> {
     let mut headers = HeaderMap::new();
     if let Ok(value) = clear_session_cookie().parse() {
         headers.insert(SET_COOKIE, value);
+    }
+    // On a customer-owned domain the session is that host's own cookie, which
+    // the `Domain=`-scoped clear above cannot reach; end its token too.
+    if let Some(axum::Extension(ctx)) = on_domain {
+        end_domain_session(&request_headers, &ctx).await;
+        let clear = host_only_session_clear(&request_headers);
+        if let Ok(value) = clear.parse() {
+            headers.append(SET_COOKIE, value);
+        }
     }
     Ok((
         headers,
@@ -174,6 +187,30 @@ pub async fn logout() -> Result<(HeaderMap, Json<LogoutResponse>), StatusCode> {
             message: "Built-in logout successful".to_string(),
         }),
     ))
+}
+
+/// Revoke the domain token behind this request's session cookie, if any.
+async fn end_domain_session(request_headers: &HeaderMap, ctx: &CustomDomainCtx) {
+    let Some(jwt) = oxy_auth::built_in::extract_session_cookie(request_headers) else {
+        return;
+    };
+    let Ok(db) = oxy::database::client::establish_connection().await else {
+        return;
+    };
+    oxy_custom_apps::custom_domains::session::end_session(&db, &jwt, &ctx.domain).await;
+}
+
+/// The host-only clear of a custom domain's `oxy_session` (no `Domain`).
+fn host_only_session_clear(request_headers: &HeaderMap) -> String {
+    let secure = if crate::server::api::auth::is_request_secure(request_headers) {
+        "; Secure"
+    } else {
+        ""
+    };
+    format!(
+        "{}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax{secure}",
+        oxy_auth::constants::SESSION_COOKIE_NAME
+    )
 }
 
 pub async fn get_current_user(

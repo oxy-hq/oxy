@@ -17,6 +17,7 @@ use sea_orm::ModelTrait;
 use sea_orm::QueryFilter;
 use sea_orm::QueryOrder;
 use sea_orm::QuerySelect;
+use sea_orm::TransactionTrait;
 use uuid::Uuid;
 
 use super::dto::*;
@@ -774,8 +775,9 @@ pub async fn update_app(
     // workspace this row names. Only an actual move is checked, so re-sending the
     // current `project_id` still saves the rest of the edit — including for an app
     // whose workspace has since been deleted.
+    let moves_workspace = req.project_id.is_some_and(|pid| pid != existing.project_id);
     if let Some(pid) = req.project_id
-        && pid != existing.project_id
+        && moves_workspace
     {
         ensure_workspace_in_org(&db, pid, org_id).await?;
     }
@@ -803,7 +805,8 @@ pub async fn update_app(
         active.source_config = ActiveValue::Set(source_config);
     }
     active.updated_at = ActiveValue::Set(Utc::now().fixed_offset());
-    let updated = active.update(&db).await.map_err(|e| {
+    let txn = db.begin().await.map_err(internal)?;
+    let updated = active.update(&txn).await.map_err(|e| {
         if oxy::database::errors::is_unique_violation(&e) {
             return api_err(
                 StatusCode::CONFLICT,
@@ -813,11 +816,42 @@ pub async fn update_app(
         tracing::error!("Failed to update app {id}: {e}");
         internal(e)
     })?;
+    // A session opened on one of the app's custom domains carries a grant on
+    // the workspace it was opened for; after a move that grant reaches nothing,
+    // so end those sessions and let the next visit open one on the new one.
+    // In the move's transaction: a failed revoke fails the move, which can be
+    // retried, rather than leaving twelve-hour sessions that reach nothing.
+    use oxy_custom_apps::custom_domains::session::{Revoked, revoke_for_app, revoke_reason};
+    let revoked = if moves_workspace {
+        revoke_for_app(&txn, id, Some(user.id), revoke_reason::APP_MOVED)
+            .await
+            .map_err(|e| {
+                tracing::error!("update_app {id}: custom-domain sessions not revoked: {e}");
+                internal(e)
+            })?
+    } else {
+        Revoked::default()
+    };
+    txn.commit().await.map_err(internal)?;
+    // The caches forget only now: forgetting before the commit would let a
+    // request in between re-cache a token that is still live.
+    revoked.forget();
+    if moves_workspace {
+        // Once more after the commit: a sign-in that read the old workspace and
+        // minted while the move was in flight committed a token the sweep above
+        // could not see. Best effort — the move itself has landed.
+        match revoke_for_app(&db, id, Some(user.id), revoke_reason::APP_MOVED).await {
+            Ok(late) => late.forget(),
+            Err(e) => tracing::warn!("update_app {id}: post-move domain sweep failed: {e}"),
+        }
+    }
 
     // This handler can change the **slug**, which is the serve path's cache
     // KEY, as well as source/branch/project. Without this the old slug keeps
     // resolving (and the new one 404s) until the TTL expires.
     crate::custom_apps_cache::invalidate_app_resolution_cache();
+    // A custom domain's cached answer names the app by its slug.
+    oxy_app_core::custom_domain_host::invalidate_all();
 
     let org = Organizations::find_by_id(org_id)
         .one(&db)

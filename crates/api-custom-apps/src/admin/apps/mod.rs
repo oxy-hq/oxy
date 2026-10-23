@@ -174,6 +174,22 @@ fn core_routes() -> Router<AppState> {
             get(access::get_app_access).put(access::set_app_access),
         )
         .route("/{id}/teams", get(access::list_app_org_teams))
+        // Customer-owned hostnames the app's production is also served at: add
+        // one, prove it by DNS, remove it. Postgres plus one DNS-over-HTTPS read
+        // per verify — FleetOk with the nest.
+        .route(
+            "/{id}/domains",
+            get(crate::custom_domains::admin::list_domains)
+                .post(crate::custom_domains::admin::add_domain),
+        )
+        .route(
+            "/{id}/domains/{domain_id}",
+            axum::routing::delete(crate::custom_domains::admin::remove_domain),
+        )
+        .route(
+            "/{id}/domains/{domain_id}/verify",
+            post(crate::custom_domains::admin::verify_domain),
+        )
         .route("/{id}/members", get(access::list_app_org_members))
         // "Test notifications": the kinds the live build declares, and one sent
         // as the app to the caller alone, through `ctx.notify`'s send path. DB

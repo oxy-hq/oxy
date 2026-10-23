@@ -137,7 +137,7 @@ Your operator approves once in the browser. Then pass \`--token-env OXY_TOKEN\` 
     oxyc validate                  # check the workspace YAML — no network, no token
     oxyc proxy --env dev           # local app dev against cloud data
     oxyc login-link --next /ide    # one-time URL that signs a browser in as your token — navigate to it, no OAuth
-    oxyc apps list|show|builds|health|usage|drift   # custom apps: live build, health, usage — read-only
+    oxyc apps list|show|builds|health|usage|drift|domains   # custom apps: live build, health, usage, custom domains
     oxyc <customer>                # a session scoped to one customer
     oxyc assume start --org <o> -r "why"   # staff/partner session, 60 min, not renewable
 

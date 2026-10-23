@@ -26,6 +26,7 @@ use oxy_api_custom_apps::custom_apps_agent_refusal::REFUSED_WRITES;
 use oxy_api_custom_apps::custom_apps_env_schedules::handlers as env_schedules;
 use oxy_api_custom_apps::custom_apps_promote::handlers as promote;
 use oxy_api_custom_apps::custom_apps_publish_oidc::{delete_publisher, register_publisher};
+use oxy_api_custom_apps::custom_domains::admin as domains;
 use oxy_app::surface::testing::app_publish_tokens as publish_tokens;
 use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 use serde_json::{Value, json};
@@ -134,6 +135,21 @@ fn fixed_state_writes() -> Vec<Write> {
         ),
         write(
             "POST",
+            "/customer-apps/{id}/domains",
+            post(domains::add_domain),
+        ),
+        write(
+            "DELETE",
+            "/customer-apps/{id}/domains/{domain_id}",
+            delete(domains::remove_domain),
+        ),
+        write(
+            "POST",
+            "/customer-apps/{id}/domains/{domain_id}/verify",
+            post(domains::verify_domain),
+        ),
+        write(
+            "POST",
             "/admin/app-publish-tokens",
             post(publish_tokens::create_token),
         ),
@@ -167,6 +183,7 @@ fn body_for(agent: &Agent, path: &str, staging: Uuid) -> Option<Value> {
         "/customer-apps/{id}/notification-test" => json!({ "kind": "list_overdue" }),
         "/customer-apps/{id}/environments/{name}/schedules" => json!({ "enabled": true }),
         "/admin/app-publish-tokens" => json!({ "name": "by token" }),
+        "/customer-apps/{id}/domains" => json!({ "domain": "by-token.example.org" }),
         batch if batch.starts_with("/customer-apps/batch/") => json!({ "ids": [app] }),
         _ => return None,
     };
@@ -196,7 +213,8 @@ fn request(
         .path
         .replace("{id}", &agent.app.id.to_string())
         .replace("{name}", environment_for(write.path))
-        .replace("{publisher_id}", &Uuid::new_v4().to_string());
+        .replace("{publisher_id}", &Uuid::new_v4().to_string())
+        .replace("{domain_id}", &Uuid::new_v4().to_string());
     let request = Request::builder()
         .method(write.method)
         .uri(uri)
@@ -211,8 +229,8 @@ fn request(
 }
 
 /// What the writes above would change: the app's row, its builds, the fixed
-/// environments, and how many apps, publishers, publish tokens and
-/// notification sends there are.
+/// environments, and how many apps, publishers, publish tokens, notification
+/// sends and custom domains there are.
 async fn fixed_state(agent: &Agent) -> Value {
     let db = &agent.t.db;
     let app = app_model(db, agent.app.id).await;
@@ -249,13 +267,17 @@ async fn fixed_state(agent: &Agent) -> Value {
         .count(db)
         .await
         .expect("publish tokens");
+    let custom_domains = entity::app_custom_domains::Entity::find()
+        .count(db)
+        .await
+        .expect("custom domains");
     json!({
         "name": app.name, "slug": app.slug, "visibility": app.visibility, "status": app.status,
         "published": serving.production, "draft": serving.staging,
         "published_at": app.published_at.map(|at| at.to_rfc3339()),
         "builds": builds, "environments": environments, "apps": apps,
         "publishers": publishers, "publish_tokens": publish_tokens,
-        "notification_sends": notification_sends,
+        "notification_sends": notification_sends, "custom_domains": custom_domains,
     })
 }
 

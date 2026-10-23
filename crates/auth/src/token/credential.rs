@@ -39,6 +39,12 @@ pub mod source {
     /// engineer's agent asked for, for hours. Fixed at mint, so the routes
     /// that edit a token read this.
     pub const OXYC_AGENT: &str = "oxyc_agent";
+    /// Minted by the custom-domain sign-in handoff
+    /// (`oxy_custom_apps::custom_domains::session`): one workspace, `Member` at
+    /// most, twelve hours, named `custom-domain:<domain>`. What a cookie on a
+    /// customer-owned domain carries, so that the domain's owner never holds a
+    /// visitor's login.
+    pub const CUSTOM_DOMAIN: &str = "custom_domain";
 }
 
 /// What a token's service account is, read from its `service_accounts` row:

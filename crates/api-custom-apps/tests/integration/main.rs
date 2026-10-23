@@ -149,6 +149,7 @@ mod custom_apps_cache_invalidation;
 mod custom_apps_publish_function_artifacts;
 mod custom_apps_publish_machine;
 mod custom_apps_publish_workspace;
+mod custom_domains;
 mod demo_fixture;
 mod draft_publish_retention;
 mod env_schedules;

@@ -27,17 +27,20 @@ async function writeClipboard(value: string, label: string) {
 export const CopyButton = ({
   value,
   label = "URL",
-  className
+  className,
+  testId
 }: {
   value: string;
   label?: string;
   className?: string;
+  testId?: string;
 }) => {
   const [copied, setCopied] = useState(false);
   return (
     <button
       type='button'
       aria-label={`Copy ${label}`}
+      data-testid={testId}
       title={`Copy ${label}`}
       className={cn(
         "inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
