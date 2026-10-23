@@ -10,6 +10,7 @@
 
 import { usableAsApiKey } from "../auth/token-kind.js";
 import { CliError, ExitCode, exitCodeForStatus } from "../util/errors.js";
+import { proxyHint } from "../util/proxy.js";
 import { cacheKey, readCache, writeCache } from "./cache.js";
 import { isExternalSurface } from "./paths.js";
 import { userAgent } from "./user-agent.js";
@@ -143,7 +144,7 @@ export async function request(opts: RequestOptions): Promise<ApiResponse> {
       code: ExitCode.UNAVAILABLE,
       hint: message.includes("timed out")
         ? "the deployment may be starting up — retry, or raise --timeout"
-        : `check the target is reachable: ${opts.target}`
+        : (proxyHint() ?? `check the target is reachable: ${opts.target}`)
     });
   }
 

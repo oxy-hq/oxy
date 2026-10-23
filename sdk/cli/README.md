@@ -1288,6 +1288,12 @@ its own token (`tokens create --agent` or `--sandbox-agent`) does not: there,
 | `OXYC_QUIET` | — | `1` is `--quiet` |
 | `OXYC_DRY_RUN` | — | `1` makes `launch` print the command instead of running it |
 | `NO_COLOR` / `FORCE_COLOR` | — | force plain / coloured output |
+| `HTTPS_PROXY` / `HTTP_PROXY` | — | requests go through it. On Node 22.21+ and 24.5+, `oxyc` turns on Node's proxy support itself (`NODE_USE_ENV_PROXY`), re-running once if it has to. Older Node cannot proxy `fetch`, and the error says so |
+
+**In a Claude Code cloud session,** the repo's SessionStart hook installs
+`oxyc` and keeps an agent token across shell calls. The environment must allow
+the Oxy hosts. Setup: the `oxy-custom-apps` skill, "Headless and cloud
+sessions".
 
 **An agent should set `OXY_AGENT`.** Every request `oxyc` makes to a deployment
 carries the user agent `oxyc/<version>`, with `agent/<label>` after it when an

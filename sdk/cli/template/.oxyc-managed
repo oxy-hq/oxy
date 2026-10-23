@@ -180,6 +180,11 @@ managed   .github/scripts/*.sh
 # app locally", and it is meant to improve for everyone at once.
 managed   scripts/*.sh
 
+# The Claude Code cloud-session hook: installs oxyc and wires its proxy and
+# credential so an agent with no browser can publish. It tracks oxyc's own
+# behaviour, and a test keeps it byte-identical to oxygen-internal's copy.
+managed   .claude/hooks/*.sh
+
 # The merge rule for the generated memory index. It is a statement about how
 # oxyc's own generated file behaves, so oxyc owns it.
 managed   .gitattributes
@@ -246,6 +251,10 @@ mixed     .gitignore
 # script somebody decided on is the customer's.
 mixed     pnpm-workspace.yaml
 
+# The SessionStart entry that runs the hook above is the tool's; any other
+# hook, permission or plugin a team adds beside it is theirs.
+mixed     .claude/settings.json
+
 # --- scope: which tree each file describes ----------------------------------
 #
 # Grouped by answer rather than written beside the role above, so that the two
@@ -262,6 +271,10 @@ scope-repo       scripts/*.sh
 scope-repo       .gitattributes
 scope-repo       .oxyc-managed
 scope-repo       .oxyc-template.json
+
+# Claude Code reads `.claude/` from the root of the repo it opened.
+scope-repo       .claude/hooks/*.sh
+scope-repo       .claude/settings.json
 
 # The PNPM workspace and the git working tree, which are root things in a repo
 # whose Oxy workspace is somewhere else. `pnpm dev` is run from the repo root;

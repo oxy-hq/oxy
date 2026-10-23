@@ -39,9 +39,13 @@ oxyc tokens create --sandbox-agent --app <org>/<app> --env <deployment>
   the page yourself.
 - **Evaluate that line and work with the token.** In a shell that persists:
   `eval "$(oxyc tokens create --sandbox-agent --app <org>/<app> --env <deployment>)"`.
-  In one that does not, keep the value and set `OXY_TOKEN` on each command.
-  `oxyc` writes nothing to the credentials file. Never write the token to a
-  file, a commit or your report.
+  In one that does not, such as an agent's shell tool, redirect it to
+  `~/.config/oxy/agent-token.env` under `umask 077`, and start each command
+  with `. ~/.config/oxy/agent-token.env &&`. In a Claude Code cloud session,
+  the repo's SessionStart hook does that for you
+  ([SKILL.md → Headless and cloud sessions](../SKILL.md#headless-and-cloud-sessions)).
+  `oxyc` writes nothing to the credentials file. That file is the only place
+  the token goes. Never put it in a commit or your report.
 - **Make the variable the only credential.** Put `--token-env OXY_TOKEN` on
   every command after the mint, as the loop below does. With it, a command
   that lost the variable exits `4` (`OXY_TOKEN is not set`): set it and run the

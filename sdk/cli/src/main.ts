@@ -75,6 +75,7 @@ import { VERSION } from "./generated/version.js";
 import * as log from "./ui/log.js";
 import { err } from "./ui/tty.js";
 import { CliError, ExitCode, usageError } from "./util/errors.js";
+import { relaunchWithEnvProxy, routeThroughEnvProxy } from "./util/proxy.js";
 import { didYouMeanCommand } from "./util/suggest.js";
 
 /** Flags every command accepts, declared once and attached to each. */
@@ -1679,6 +1680,8 @@ function expandBareCustomer(argv: string[], program: Command): string[] {
 }
 
 async function main(): Promise<void> {
+  // Before anything can make a request: behind a proxy, none would leave.
+  if (routeThroughEnvProxy() === "relaunch") process.exit(relaunchWithEnvProxy());
   const program = buildProgram();
   applyExitOverride(program);
   // `expandBareCustomer` can throw (a near-miss command name), so it is inside

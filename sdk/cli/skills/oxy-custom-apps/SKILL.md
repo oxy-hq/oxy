@@ -361,11 +361,16 @@ oxyc fn dev notify --input @sample.json --env-file .env.dev --watch
 
 ## Publishing
 
-**These commands are a person's.** `oxyc login` is the engineer's own browser
-login, and a publish to a channel or a promote is refused under a sandbox
-agent token. As an agent, publish into your own sandbox
-([references/sandbox-agent-loop.md](references/sandbox-agent-loop.md)) and
-leave the ship step to your engineer.
+**These commands are a person's, or an agent's on a token that person
+approved.** `oxyc login` is the engineer's own browser login, and a publish to
+a channel or a promote is refused under a sandbox agent token. As an agent,
+iterate in your own sandbox
+([references/sandbox-agent-loop.md](references/sandbox-agent-loop.md)). Ship
+only when your engineer asked you to, on an agent token they approved
+(`oxyc tokens create --agent`, plus `--standing` for staff access): it
+publishes and promotes as them. With no browser on your machine, see
+[Headless and cloud sessions](#headless-and-cloud-sessions): a token approved
+there never carries staff access.
 
 Ship with `oxyc publish` (`npm i -g @oxy-hq/cli`) — **no CI step, no S3 sync,
 no folder picker**. From the app directory:
@@ -444,6 +449,76 @@ nobody the plan.
 
 The build is not the check: after a publish, drive the page
 ([references/verifying-in-the-browser.md](references/verifying-in-the-browser.md)).
+
+## Headless and cloud sessions
+
+A Claude Code cloud session (claude.ai/code), a CI runner or any machine with
+no browser can mint a token, iterate in a sandbox and publish. A person
+approves once, from any device.
+
+1. **The cloud environment.** Its owner sets this once in the environment's
+   settings. Under **Network access → Custom**, allow `app.oxygen-hq.com` and
+   `*.oxy.tech`, and keep the default package-manager list ticked so npm can
+   install `oxyc`. Optionally add `OXY_APPROVER=<their email>` under
+   environment variables, so each approval request is pushed to them.
+2. **The repo's SessionStart hook,** `.claude/hooks/oxyc-cloud-session.sh`,
+   with its entry in `.claude/settings.json`. In a cloud session it installs
+   `oxyc` and routes it through the session's proxy. It also makes a minted
+   token reach every later command, which an `export` in one shell call cannot
+   do. What it prints at session start says what is missing.
+   - A customer repo that `oxyc new` or `oxyc adopt` made has both files.
+   - In an existing customer repo, `oxyc update --apply` adds the script but
+     only reports the settings entry, because the team may have their own
+     settings. Add the entry by hand:
+     ```json
+     { "hooks": { "SessionStart": [ { "matcher": "", "hooks": [ { "type": "command",
+       "command": "\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/oxyc-cloud-session.sh\"",
+       "timeout": 120 } ] } ] } }
+     ```
+   - Any other repo can copy both from the `template/.claude/` directory of the
+     installed `@oxy-hq/cli` package.
+3. **The credential.** Run this in the background, because the approval can
+   outlast a two-minute shell limit:
+   ```bash
+   mkdir -p ~/.config/oxy && (umask 077; oxyc tokens create --agent --no-browser \
+     --env production >~/.config/oxy/agent-token.env)
+   ```
+   Give your engineer the URL and the code it prints on stderr. The token goes
+   to that file and never into your context. The hook loads the file before
+   every later command. To iterate in a sandbox, mint
+   `--sandbox-agent --app <org>/<app>` into the same file instead. A token
+   lasts 8 hours by default (`--hours`, up to 168). On exit `4`, mint again.
+4. **Ship** with the commands above, each with `--token-env OXY_TOKEN`.
+   `promote` and `rollback` need `--yes`, because there is no terminal to ask.
+
+**A token approved by device code never carries staff or partner access.**
+`--standing --no-browser` is a usage error (exit `2`). The token from step 3
+reaches only what the approver's org memberships do. That is enough when they
+belong to the app's org. Staff shipping a customer's app have three ways:
+
+- **Let the repo's CI publish a draft, and a person promote it.** This works
+  only where the repo turned CI publishing on, with the repository variable
+  `OXY_CI_PUBLISH=on`. Without it, the publish job is skipped and the run
+  still shows green.
+  - `gh workflow run publish.yaml -f ref=<branch>` publishes that ref as
+    production's draft, which is staging. A push to `main` publishes to `dev`
+    instead.
+  - Check that the publish job ran, not that the run is green.
+  - Then your engineer runs `oxyc promote <org>/<app> --dry-run`, then
+    `oxyc promote <org>/<app>`, and sees the plan before it ships.
+  - Never pass `-f promote=true`. It rebuilds the ref and puts it live with no
+    plan, the deprecated promoting publish.
+- **Mint the standing token where a browser opens.** On the engineer's own
+  machine, run `oxyc tokens create --agent --standing --hours <n>`. They put
+  the value in the cloud environment's variables as `OXY_TOKEN`. Anyone who
+  uses that environment can read it, so keep `--hours` short and revoke the
+  token when the task is done.
+- **Leave the ship step to the engineer.** Hand back the sandbox's build and
+  the `oxyc promote --from dev-<handle>` command.
+
+Without the hook, start each command with `. ~/.config/oxy/agent-token.env &&`.
+If a command fails with `fetch failed` (exit `7`) while `HTTPS_PROXY` is set,
+`oxyc` is too old to use the proxy. Update it, or set `NODE_USE_ENV_PROXY=1`.
 
 ## Sandboxes — try a change on real data before shipping it
 
