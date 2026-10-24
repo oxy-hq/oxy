@@ -980,7 +980,7 @@ oxyc env delete <app> <name> [--yes] [--wait [seconds]]
 oxyc env schedules <app> <name> [--on|--off] # staging's or a sandbox's switch; off by default
 
 oxyc publish --app-env <name> [--env <e>]    # see "Custom apps" above
-oxyc fn dev <function> [--input <json|@file|->] [--env-file <path>] [--watch]   # local, in-process
+oxyc fn dev <function> [--input <json|@file|->] [--env-file <path>] [--watch] [--read-through [--env <e>]]   # local, in-process
 oxyc fn call <app> <function> [--app-env <name>] [--data <json|@file|->]
 oxyc fn run <app> <function> [--app-env <name>] [--as-schedule] [--data …] [--timeout <s>]
 oxyc checks run <app> --app-env <name>       # see "Checks" above
@@ -1080,6 +1080,16 @@ is not the isolate:** no timeout, memory or log limits, Node globals the isolate
 lacks, and every warehouse, semantic, storage, fetch and email call is stubbed
 in memory — nothing reaches a deployment. Check it where it really runs with
 `fn call` against a sandbox.
+
+`fn dev --read-through [--env <name|url>]` sends exactly `ctx.query`,
+`ctx.warehouse.query` and `ctx.semantic.query` to that deployment, through
+`POST /api/projects/{project}/query` and `/semantic-query` (the routes a
+published app calls), authenticated as `oxyc api` is (`OXY_TOKEN` or your
+`oxyc login`). The server decides what you may read. The project is `--project`
+/ `OXY_PROJECT`, else looked up from `oxy-app.json` `slug` + `orgSlug`. Every
+other call — writes, transactions, storage, fetch, email — stays stubbed, the
+report marks each call `real` or `stubbed`, and a local run is still not the
+isolate.
 
 **`env schedules`** reads, or with `--on` / `--off` flips, the schedules
 switch of staging or a sandbox (`GET`/`PUT

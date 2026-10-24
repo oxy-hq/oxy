@@ -336,6 +336,7 @@ prints the response, then the host ops the handler made.
 ```bash
 oxyc fn dev notify --input '{"name":"Ada"}'            # a literal, @file, or - for stdin
 oxyc fn dev notify --input @sample.json --env-file .env.dev --watch
+oxyc fn dev report --read-through --env dev     # reads hit that deployment; writes stay stubbed
 ```
 
 - **Run it from the app directory** (the one with `oxy-app.json`). `--env-file`
@@ -350,10 +351,25 @@ oxyc fn dev notify --input @sample.json --env-file .env.dev --watch
 - **A local run is not the isolate.** There is no timeout, memory or log cap;
   `Buffer`, `TextEncoder` and `process` exist where the isolate lacks them; and
   every warehouse, semantic, storage, fetch and email call is a stub in memory,
-  so nothing reaches a deployment. The context does refuse what the manifest
+  so (without `--read-through`) nothing reaches a deployment. The context does refuse what the manifest
   does not grant, in the host's words. A `ctx.warehouse` destination's engine is
   assumed (a `customerWarehouseWrites` entry is a customer Postgres, any other
   is Airhouse), because the workspace config is not read.
+- **`--read-through` reads real data, and only reads.** It sends `ctx.query`,
+  `ctx.warehouse.query` and `ctx.semantic.query` to the deployment `--env <name|url>`
+  (or `--target`) names, through the app's own `POST /api/projects/{project}/query`
+  and `/semantic-query`, with your `oxyc login` bearer or `OXY_TOKEN` (the way
+  `oxyc api` authenticates). What you may read is the server's decision. The
+  project is `--project` / `OXY_PROJECT`, else looked up from `oxy-app.json`
+  `slug` + `orgSlug`. Every other call (warehouse writes, `ctx.tx`, `ctx.oltp`,
+  `ctx.airhouse`, storage, fetch, email, notify, and `ctx.queryStream`) stays a
+  stub in memory and never leaves your machine. Each call in the report is marked
+  `real` or `stubbed`. `--env` defaults to production, so name a dev environment
+  when you can. A sandbox agent token is refused: use a person's login.
+  `ctx.semantic.query` row keys are `view__member` in the isolate but the route
+  strips the prefix, so read-through puts it back from your spec; a key it could
+  not map unambiguously stays as the route named it, so confirm that one with
+  `fn call` on a sandbox. Still not the isolate.
 - Before you ship, run it where it really runs: publish to your sandbox and
   `oxyc fn call`, or `oxyc checks run`. For a committed regression test use
   `createTestContext` from `@oxy-hq/sdk/testing` in vitest, as the functions

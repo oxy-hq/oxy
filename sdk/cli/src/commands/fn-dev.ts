@@ -17,6 +17,11 @@
  * semantic, storage, fetch and email call is answered by an in-memory stub —
  * nothing reaches a deployment. `--help` and the report say so; `oxyc fn call`
  * or `checks run` against a sandbox is the check that reaches the real host.
+ *
+ * `--read-through` sends exactly three of those calls — `ctx.query`,
+ * `ctx.warehouse.query` and `ctx.semantic.query` — to a deployment, as the
+ * caller; see `fn-dev-read-through.ts`. Every other call stays a stub, and the
+ * report marks each call `real` or `stubbed`.
  */
 
 import { mkdtempSync, readdirSync, rmSync, watch } from "node:fs";
@@ -25,11 +30,13 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isValidFunctionName } from "@oxy-hq/sdk/manifest";
 import { createTestContext, type HostCall, type ManifestLike } from "@oxy-hq/sdk/testing";
+import type { Context } from "../context/resolve.js";
 import { bundleFunctions, type Runner, spawnRunner } from "../publish/functions.js";
 import { declaredFunctions, functionEntry, loadPublishManifest } from "../publish/manifest.js";
 import * as log from "../ui/log.js";
 import { err } from "../ui/tty.js";
 import { CliError, ExitCode, usageError } from "../util/errors.js";
+import { createReadThrough, READ_THROUGH_OPS, type ReadThrough } from "./fn-dev-read-through.js";
 import {
   describeStagingPolicy,
   inputReader,
@@ -45,12 +52,41 @@ export const LOCAL_RUN_NOTICE =
   "Warehouse, semantic, storage, fetch and email calls are stubbed in memory — nothing " +
   "reaches a deployment.";
 
+/**
+ * What `--read-through` adds to the notice: the three reads go out, as the
+ * caller, to `target`; everything else is still in memory. Still not the isolate.
+ */
+export function readThroughNotice(target: string): string {
+  return (
+    "LOCAL RUN, not the isolate: no timeout, memory or log limits, Node globals the isolate " +
+    "lacks are present, and none of the broker's refusals that depend on a deployment. " +
+    `READ-THROUGH to ${target}: ctx.query, ctx.warehouse.query and ctx.semantic.query read ` +
+    "that deployment's data as you, under the server's own access checks. Every other call — " +
+    "warehouse writes, transactions, oltp, airhouse, storage, fetch, email, notify — is " +
+    "stubbed in memory and never leaves this machine."
+  );
+}
+
+/** `--help` for `--read-through`. */
+export const READ_THROUGH_HELP =
+  "--read-through sends ctx.query, ctx.warehouse.query and ctx.semantic.query to the deployment " +
+  "(--env <name|url> or --target), through POST /api/projects/{project}/query and /semantic-query " +
+  "with your oxyc login bearer (or OXY_TOKEN); the server decides what you may read. The project is " +
+  "--project / OXY_PROJECT, else looked up from oxy-app.json slug + orgSlug (or --org). Every other " +
+  "call stays stubbed in memory, and the report marks each call real or stubbed.";
+
 export interface FnDevOptions {
   /** `--input`: a literal, `@file` or `-`; the request body. Default `{}`. */
   input?: string;
   /** `--env-file`: the secrets, as `KEY=value` lines. Default `.env` when present. */
   envFile?: string;
   watch?: boolean;
+  /**
+   * `--read-through`: send `ctx.query`, `ctx.warehouse.query` and
+   * `ctx.semantic.query` to the deployment `deps.context` targets. Needs
+   * `deps.context`.
+   */
+  readThrough?: boolean;
 }
 
 /** What one run produced. */
@@ -65,6 +101,11 @@ export interface FnDevResult {
   /** The handler threw, or could not be loaded. */
   error?: string;
   calls: readonly HostCall[];
+  /**
+   * Set under `--read-through`: where the reads went. A call whose op is in
+   * `ops` was `real`; every other call was `stubbed`. Absent, all are stubbed.
+   */
+  readThrough?: { target: string; project: string; ops: readonly string[] };
   ops: string[];
   unsetRequired: string[];
   stagingPolicy: string[];
@@ -79,6 +120,12 @@ export interface FnDevDeps {
    * (at EOF, to an empty body) on each `--watch` re-run.
    */
   readInput?: () => string;
+  /**
+   * The command context (target, credential, `--project`/`--org`) that
+   * `--read-through` sends reads with. Built by `main.ts` only when the flag is
+   * set, so a run without it never resolves a target or a credential.
+   */
+  context?: Context;
   stdout?: (text: string) => void;
   cwd?: string;
 }
@@ -166,6 +213,16 @@ export async function devOnce(
     env,
     databases: seedDatabases(spec)
   });
+  // Before the handler runs: a missing login or unknown app fails the command.
+  let readThrough: ReadThrough | undefined;
+  if (opts.readThrough) {
+    if (!deps.context) throw usageError("--read-through needs a deployment to read from");
+    readThrough = await createReadThrough(deps.context, {
+      slug: typeof raw.slug === "string" ? raw.slug : undefined,
+      orgSlug: typeof raw.orgSlug === "string" ? raw.orgSlug : undefined
+    });
+    readThrough.install(t);
+  }
   const base = {
     function: name,
     unsetRequired,
@@ -192,6 +249,11 @@ export async function devOnce(
     ok: error === undefined && (answer?.ok ?? false),
     ...answer,
     error,
+    readThrough: readThrough && {
+      target: readThrough.target,
+      project: readThrough.project,
+      ops: READ_THROUGH_OPS
+    },
     calls: t.calls,
     ops: t.ops()
   };
@@ -207,8 +269,9 @@ function show(value: unknown, max = 300): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-function describeCall(call: HostCall): string {
-  const head = `  ${call.op}  ${call.outcome}  ${show(call.args)}`;
+function describeCall(call: HostCall, real: ReadonlySet<string>): string {
+  const where = real.has(call.op) ? "real" : "stubbed";
+  const head = `  ${call.op}  ${call.outcome}  ${where}  ${show(call.args)}`;
   return call.message ? `${head}\n    ${call.message}` : head;
 }
 
@@ -226,7 +289,13 @@ export function renderReport(result: FnDevResult): string {
     if (result.body) lines.push(result.body);
   }
   lines.push("", `host ops: ${result.ops.length ? result.ops.join(", ") : "none"}`);
-  for (const call of result.calls) lines.push(describeCall(call));
+  if (result.readThrough) {
+    lines.push(
+      `read-through: ${result.readThrough.ops.join(", ")} → ${result.readThrough.target} (project ${result.readThrough.project}); every other call is stubbed`
+    );
+  }
+  const real = new Set(result.readThrough?.ops);
+  for (const call of result.calls) lines.push(describeCall(call, real));
   return `${lines.join("\n")}\n`;
 }
 
@@ -306,7 +375,12 @@ export async function runFnDev(
   base: FnDevDeps = {}
 ): Promise<void> {
   const deps: FnDevDeps = { ...base, readInput: base.readInput ?? inputReader(opts.input) };
-  process.stderr.write(`${err.yellow(LOCAL_RUN_NOTICE)}\n`);
+  if (opts.readThrough && !deps.context) {
+    throw usageError("--read-through needs a deployment to read from");
+  }
+  const notice =
+    deps.context && opts.readThrough ? readThroughNotice(deps.context.target()) : LOCAL_RUN_NOTICE;
+  process.stderr.write(`${err.yellow(notice)}\n`);
   if (!opts.watch) {
     if (!(await runAndPrint(name, opts, deps))) {
       throw new CliError(`${name} failed`, { code: ExitCode.FAILURE });

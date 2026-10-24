@@ -187,7 +187,7 @@ describe("runFnDev and the report", () => {
     );
     const report = renderReport(result);
     expect(report).toContain("host ops: email.send");
-    expect(report).toMatch(/email\.send {2}ok {2}\{.*"subject":"Hi Ada"/);
+    expect(report).toMatch(/email\.send {2}ok {2}stubbed {2}\{.*"subject":"Hi Ada"/);
   });
 
   it("labels a local run as not the isolate", () => {

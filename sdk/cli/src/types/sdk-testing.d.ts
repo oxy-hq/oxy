@@ -43,6 +43,8 @@ declare module "@oxy-hq/sdk/testing" {
     ctx: unknown;
     readonly calls: readonly HostCall[];
     ops(): string[];
+    /** Replace one host op for this context; the call is still recorded. */
+    override(op: string, impl: (args: Record<string, unknown>) => Promise<unknown> | unknown): void;
   }
 
   export function createTestContext(
