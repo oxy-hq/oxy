@@ -248,6 +248,9 @@ workspace-hack = { version = "0.1", path = "../workspace-hack" }
 chrono = { workspace = true }
 
 [dev-dependencies]
+# `usage_fixtures`: an in-memory stand-in for a workspace's Airhouse and a fixed
+# usage history, for the report's two-store test.
+oxy-custom-apps = { workspace = true, features = ["test-fixtures"] }
 oxy-app-core = { workspace = true, features = ["test-fixtures"] }
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }

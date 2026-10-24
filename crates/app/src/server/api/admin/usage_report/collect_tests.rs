@@ -6,6 +6,7 @@ fn catalog_row(app: u128, org: u128, name: &str, published: bool) -> CatalogRow 
     CatalogRow {
         app_id: Uuid::from_u128(app),
         org_id: Uuid::from_u128(org),
+        workspace_id: Uuid::from_u128(org + 1_000),
         name: name.to_string(),
         slug: name.to_lowercase(),
         published_at: published.then(|| Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap()),
@@ -221,4 +222,41 @@ fn a_draft_that_shipped_a_release_is_reported() {
 fn a_negative_count_reads_as_zero() {
     assert_eq!(n(-1), 0);
     assert_eq!(n(7), 7);
+}
+
+/// A person who opened two of an org's apps is one person at the org, however
+/// the two apps' views were read; a person seen only the week before counts
+/// only there.
+#[test]
+fn org_people_counts_a_person_once_across_apps() {
+    let person = |app: u128, user: u128, views: i64, prev_views: i64| PersonRow {
+        app_id: Uuid::from_u128(app),
+        user_id: Uuid::from_u128(user),
+        views,
+        prev_views,
+    };
+    let catalog = vec![
+        catalog_row(10, 1, "A", true),
+        catalog_row(11, 1, "B", true),
+        catalog_row(12, 2, "C", true),
+    ];
+    let mut counted = org_people(
+        &catalog,
+        &[
+            person(10, 100, 2, 0),
+            person(11, 100, 1, 1),
+            person(11, 101, 0, 3),
+            person(12, 100, 5, 0),
+            // An app the catalog does not know is left out, not a panic.
+            person(99, 102, 1, 1),
+        ],
+    );
+    counted.sort_by_key(|o| o.org_id);
+    assert_eq!(
+        counted
+            .iter()
+            .map(|o| (o.org_id, o.people, o.prev_people))
+            .collect::<Vec<_>>(),
+        vec![(Uuid::from_u128(1), 1, 2), (Uuid::from_u128(2), 1, 0)]
+    );
 }

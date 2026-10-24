@@ -9,6 +9,7 @@ use chrono::{DateTime, Duration, Utc};
 use entity::{
     app_admin_scope_orgs, app_admins, app_builds, app_environment_events, app_function_invocations,
     app_storage_usage_samples, apps, custom_app_event, custom_app_view_event, organizations, users,
+    workspaces,
 };
 use oxy_app::emails::{EmailMessage, EmailProvider};
 use oxy_app::server::api::admin::usage_report::period::Period;
@@ -89,11 +90,31 @@ impl World {
     }
 
     pub async fn app(&self, org: Uuid, name: &str, published: bool) -> Uuid {
+        self.app_in(org, Uuid::new_v4(), name, published).await
+    }
+
+    /// A workspace row, for a test whose apps' usage has a store of its own.
+    pub async fn workspace(&self, org: Uuid) -> Uuid {
+        let id = Uuid::new_v4();
+        workspaces::ActiveModel {
+            id: Set(id),
+            name: Set(format!("Workspace {id}")),
+            org_id: Set(Some(org)),
+            ..Default::default()
+        }
+        .insert(&self.db)
+        .await
+        .expect("seed workspace");
+        id
+    }
+
+    /// [`app`](Self::app) in a given workspace.
+    pub async fn app_in(&self, org: Uuid, workspace: Uuid, name: &str, published: bool) -> Uuid {
         let id = Uuid::new_v4();
         apps::ActiveModel {
             id: Set(id),
             org_id: Set(org),
-            project_id: Set(Uuid::new_v4()),
+            project_id: Set(workspace),
             slug: Set(format!(
                 "{}-{}",
                 name.to_lowercase().replace(' ', "-"),

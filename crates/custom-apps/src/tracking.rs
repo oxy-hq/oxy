@@ -51,6 +51,7 @@
 //!   the prune has to be an app-level loop — "internal-volume product
 //!   analytics" doesn't need a tighter window than 6h.
 
+use crate::usage_airhouse;
 use crate::usage_queue;
 use chrono::Utc;
 use entity::{custom_app_event, custom_app_view_event};
@@ -272,12 +273,15 @@ pub async fn record_event(
         environment,
         Utc::now().fixed_offset(),
     )?;
-    let id = *model.id.as_ref();
-    model
+    let row = model
         .insert(db)
         .await
         .map_err(|e| EventError::Db(e.to_string()))?;
-    Ok(id)
+    // The drain appends a beacon event to the workspace's Airhouse as it writes
+    // it; an SDK event gets the same copy, or the Activity tab, which reads
+    // Airhouse once a workspace's history is copied, would never show it.
+    usage_airhouse::mirror_event(row.clone());
+    Ok(row.id)
 }
 
 /// Queue a platform-beacon event for the drain task. Same validation as

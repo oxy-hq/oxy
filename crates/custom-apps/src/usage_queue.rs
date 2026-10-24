@@ -40,6 +40,10 @@
 //! in-process drain for the reason the rest of it does: the work is flushing
 //! this process's memory, not durable work another worker could claim.
 //!
+//! SDK events (`record_event`) are written to Postgres by the route itself and
+//! reach Airhouse as [`UsageJob::Mirror`] jobs in the same batches, so a busy app
+//! costs one insert per batch, not one per event.
+//!
 //! **Shutdown.** The drain is registered as a shutdown hook and does a final
 //! [`flush`] when the shutdown token fires. **Tests** call [`flush`] to make
 //! queued rows visible without waiting for a tick; it drains inline whether or
@@ -109,6 +113,9 @@ pub struct EventJob {
 pub enum UsageJob {
     View(Box<ViewJob>),
     Event(Box<EventJob>),
+    /// An SDK event already written to Postgres by `record_event`: the drain
+    /// only appends it to Airhouse, in the batch with the beacon's events.
+    Mirror(Box<custom_app_event::Model>),
 }
 
 /// The channel, its single consumer, and the drop counter. Constructed with a
@@ -145,6 +152,13 @@ impl Queue {
                     self.wake.notify_one();
                 }
                 true
+            }
+            // A mirror's Postgres row exists; what is lost is its Airhouse copy,
+            // which is the Airhouse sink's failure to count, not a shed row.
+            Err(mpsc::error::TrySendError::Full(UsageJob::Mirror(_)))
+            | Err(mpsc::error::TrySendError::Closed(UsageJob::Mirror(_))) => {
+                airhouse_sink::count_failed(1);
+                false
             }
             Err(_) => {
                 let n = self.dropped.fetch_add(1, Ordering::Relaxed) + 1;
@@ -334,10 +348,12 @@ fn take_batch(rx: &mut mpsc::Receiver<UsageJob>) -> Vec<UsageJob> {
 async fn write_batch(batch: Vec<UsageJob>) {
     let mut views = Vec::new();
     let mut events = Vec::new();
+    let mut mirrors = Vec::new();
     for job in batch {
         match job {
             UsageJob::View(v) => views.push(*v),
             UsageJob::Event(e) => events.push(*e),
+            UsageJob::Mirror(m) => mirrors.push(*m),
         }
     }
     let db = match establish_connection().await {
@@ -346,6 +362,7 @@ async fn write_batch(batch: Vec<UsageJob>) {
             QUEUE
                 .lost
                 .fetch_add((views.len() + events.len()) as u64, Ordering::Relaxed);
+            airhouse_sink::count_failed(mirrors.len() as u64);
             tracing::warn!("custom-app usage drain: DB connect failed; dropping batch: {e}");
             return;
         }
@@ -353,7 +370,35 @@ async fn write_batch(batch: Vec<UsageJob>) {
     // Postgres first, both tables; Airhouse only once they are done.
     let mut facts = write_views(&db, views).await;
     facts.extend(write_events(&db, events).await);
+    facts.extend(mirror_facts(&db, mirrors).await);
     airhouse_sink::publish(&db, facts).await;
+}
+
+/// The Airhouse facts for SDK events `record_event` already wrote to Postgres.
+async fn mirror_facts(
+    db: &DatabaseConnection,
+    rows: Vec<custom_app_event::Model>,
+) -> Vec<WorkspaceFact> {
+    if rows.is_empty() || !airhouse_sink::enabled() {
+        return Vec::new();
+    }
+    let app_ids = rows
+        .iter()
+        .map(|r| r.app_id)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    let homes = airhouse_sink::app_homes(db, app_ids).await;
+    let recorded_at = chrono::Utc::now();
+    rows.iter()
+        .filter_map(|r| {
+            let (workspace_id, org_id) = *homes.get(&r.app_id)?;
+            Some((
+                workspace_id,
+                UsageFact::from_event_model(r, org_id, recorded_at),
+            ))
+        })
+        .collect()
 }
 
 /// A fact and the workspace whose Airhouse it belongs in.
@@ -502,8 +547,32 @@ mod tests {
     fn name(job: &UsageJob) -> &str {
         match job {
             UsageJob::Event(e) => &e.event_name,
+            UsageJob::Mirror(m) => &m.event_name,
             UsageJob::View(_) => "view",
         }
+    }
+
+    /// A mirror that does not fit is an Airhouse copy lost, counted as an
+    /// Airhouse failure; the queue's own shed count is for rows Postgres lost.
+    #[test]
+    fn a_full_queue_counts_a_dropped_mirror_as_an_airhouse_failure() {
+        let q = Queue::with_capacity(1);
+        assert!(q.push(event(0)));
+        let before = airhouse_sink::failed_total();
+        let mirror = UsageJob::Mirror(Box::new(custom_app_event::Model {
+            id: Uuid::nil(),
+            app_id: Uuid::nil(),
+            user_id: Uuid::nil(),
+            user_email: String::new(),
+            session_id: Uuid::nil(),
+            event_name: "export-clicked".into(),
+            payload: serde_json::json!({}),
+            occurred_at: chrono::Utc::now().fixed_offset(),
+            environment: "production".into(),
+        }));
+        assert!(!q.push(mirror));
+        assert_eq!(q.dropped.load(Ordering::Relaxed), 0);
+        assert_eq!(airhouse_sink::failed_total(), before + 1);
     }
 
     /// The contract the request path relies on: a full queue refuses the job

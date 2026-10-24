@@ -9,6 +9,7 @@
 //! (`usage_report::highlights`). Own database per test through
 //! `common::fresh_db`.
 
+mod airhouse;
 mod world;
 
 use std::collections::HashMap;

@@ -5,9 +5,12 @@
 //! Airhouse, not in Oxy's Postgres. The drain (`custom_apps_usage_queue`) still
 //! writes the Postgres rows the Activity tab and the weekly usage report read
 //! today, and then hands the same batch to [`publish`], which appends it to
-//! `oxy_custom_app_usage` in each workspace's Airhouse. Nothing that reads
-//! usage has moved yet; this is the write half, so that history starts
-//! accumulating in the data plane before the reads follow.
+//! `oxy_custom_app_usage` in each workspace's Airhouse. The reads follow once a
+//! workspace's older history has been copied in as well
+//! ([`usage_backfill`](crate::usage_backfill)): that is when
+//! [`usage_reads`](crate::usage_reads) starts answering the Activity tab and the
+//! weekly report from this table. The sink is the one door to the workspace's
+//! Airhouse for both directions, so a test installs one fake for all of it.
 //!
 //! # Best effort, behind the Postgres write
 //!
@@ -48,10 +51,11 @@ use std::time::{Duration, Instant};
 
 use airhouse::entity::tenants::{self, TenantStatus};
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, DurationRound, TimeDelta, Utc};
 use entity::{custom_app_event, custom_app_view_event};
 use oxy_cameras::airhouse::escape::{sql_opt_str, sql_str, sql_ts};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect};
+use tokio_postgres::SimpleQueryMessage;
 use uuid::Uuid;
 
 /// The workspace table both kinds of fact are appended to.
@@ -113,6 +117,13 @@ const COLUMNS: [&str; 17] = [
 pub const APPEND_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long a workspace whose append failed is left alone.
 pub const FAILURE_BACKOFF: Duration = Duration::from_secs(30);
+/// Longest one read (connect and query) may take. The Activity tab and the
+/// report fall back to Postgres after it, so it is short.
+pub const READ_TIMEOUT: Duration = Duration::from_secs(10);
+/// How far either side of a batch's `occurred_at` range the idempotency check
+/// looks, so a copy whose timestamp was cut to microseconds differently (the
+/// drain wrote it with nanoseconds, Postgres kept microseconds) is still found.
+const REPLAY_SLACK: TimeDelta = TimeDelta::seconds(1);
 /// How long "this workspace has (no) Airhouse tenant" is remembered.
 const TENANT_CACHE_TTL: Duration = Duration::from_secs(60);
 /// Most characters of an Airhouse error put in a log line.
@@ -201,6 +212,60 @@ impl UsageFact {
         })
     }
 
+    /// The fact for a stored `custom_app_view_event` row, for the backfill.
+    pub fn from_view_model(
+        row: &custom_app_view_event::Model,
+        org_id: Uuid,
+        recorded_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            event_id: row.id,
+            kind: KIND_VIEW,
+            occurred_at: row.viewed_at.with_timezone(&Utc),
+            recorded_at,
+            org_id,
+            app_id: row.app_id,
+            environment: row.environment.clone(),
+            user_id: row.user_id,
+            user_email: row.user_email.clone(),
+            session_id: row.session_id,
+            event_name: None,
+            payload: None,
+            referrer: row.referrer.clone(),
+            user_agent_class: Some(row.user_agent_class.clone()),
+            source: Some(row.source.clone()),
+            app_role: row.app_role.clone(),
+            org_role: row.org_role.clone(),
+        }
+    }
+
+    /// The fact for a stored `custom_app_event` row, for the backfill.
+    pub fn from_event_model(
+        row: &custom_app_event::Model,
+        org_id: Uuid,
+        recorded_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            event_id: row.id,
+            kind: KIND_EVENT,
+            occurred_at: row.occurred_at.with_timezone(&Utc),
+            recorded_at,
+            org_id,
+            app_id: row.app_id,
+            environment: row.environment.clone(),
+            user_id: row.user_id,
+            user_email: row.user_email.clone(),
+            session_id: row.session_id,
+            event_name: Some(row.event_name.clone()),
+            payload: Some(row.payload.to_string()),
+            referrer: None,
+            user_agent_class: None,
+            source: None,
+            app_role: None,
+            org_role: None,
+        }
+    }
+
     /// `(…)` values in [`COLUMNS`] order.
     fn values_tuple(&self) -> String {
         let id = self.event_id.to_string();
@@ -231,20 +296,30 @@ impl UsageFact {
     }
 }
 
-/// `TIMESTAMPTZ '2026-10-20T01:02:03.456+00:00'`.
-fn ts_literal(t: DateTime<Utc>) -> String {
-    format!("TIMESTAMPTZ {}", sql_ts(t))
+/// `t` cut to microseconds, the precision of Postgres' `timestamptz` and of
+/// DuckDB's `TIMESTAMPTZ`. A clock reading carries nanoseconds; written as is,
+/// the same instant would be one value in Postgres, another in Airhouse, and a
+/// copy of a Postgres row would not compare equal to the fact the drain wrote.
+pub fn micros(t: DateTime<Utc>) -> DateTime<Utc> {
+    t.duration_trunc(TimeDelta::microseconds(1)).unwrap_or(t)
+}
+
+/// `TIMESTAMPTZ '2026-10-20T01:02:03.456789+00:00'`, at microsecond precision.
+pub fn ts_literal(t: DateTime<Utc>) -> String {
+    format!("TIMESTAMPTZ {}", sql_ts(micros(t)))
 }
 
 /// The single statement that appends `facts`, skipping any whose `event_id` is
 /// already in the table. `None` for an empty slice.
 ///
-/// The existing-row check only looks at rows at or after the batch's oldest
-/// `occurred_at`: a replay carries the same ids with the same `occurred_at`, so
-/// the window is exact for it, and it lets DuckLake prune files instead of
-/// scanning the table.
+/// The existing-row check only looks at rows within [`REPLAY_SLACK`] of the
+/// batch's `occurred_at` range: a replay carries the same ids with the same
+/// `occurred_at`, so the window is exact for it, and it lets DuckLake prune
+/// files instead of scanning the table. Bounded on both sides so that a long
+/// history copied oldest first does not read everything newer than each batch.
 pub fn insert_sql(facts: &[UsageFact]) -> Option<String> {
     let oldest = facts.iter().map(|f| f.occurred_at).min()?;
+    let newest = facts.iter().map(|f| f.occurred_at).max()?;
     let columns = COLUMNS.join(", ");
     let values = facts
         .iter()
@@ -256,11 +331,15 @@ pub fn insert_sql(facts: &[UsageFact]) -> Option<String> {
          SELECT {columns} FROM (VALUES\n  {values}\n) AS v({columns})\n\
          WHERE NOT EXISTS (\n  \
              SELECT 1 FROM {TABLE} AS t\n  \
-             WHERE t.occurred_at >= {since} AND t.event_id = v.event_id\n\
+             WHERE t.occurred_at >= {since} AND t.occurred_at <= {until}\n  \
+               AND t.event_id = v.event_id\n\
          )",
-        since = ts_literal(oldest),
+        since = ts_literal(oldest - REPLAY_SLACK),
+        until = ts_literal(newest + REPLAY_SLACK),
     ))
 }
+
+pub use crate::usage_rows::{RowRef, SqlRows};
 
 /// Why an append did not happen.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -272,7 +351,8 @@ pub enum SinkError {
     Failed(String),
 }
 
-/// Where usage facts go besides Postgres. Production is [`AirhouseUsageSink`];
+/// Where usage facts go besides Postgres, and where they are read back from
+/// once a workspace's history is copied. Production is [`AirhouseUsageSink`];
 /// tests install a fake with [`install_sink`].
 #[async_trait]
 pub trait UsageSink: Send + Sync {
@@ -281,13 +361,37 @@ pub trait UsageSink: Send + Sync {
     /// (not even the workspace lookup for events).
     fn enabled(&self) -> bool;
 
-    /// Append `facts` to `workspace_id`'s Airhouse.
+    /// Append `facts` to `workspace_id`'s Airhouse. Idempotent on the event
+    /// id ([`insert_sql`]): a fact already there is not written again.
     async fn append(
         &self,
         db: &DatabaseConnection,
         workspace_id: Uuid,
         facts: &[UsageFact],
     ) -> Result<(), SinkError>;
+
+    /// Make sure `workspace_id`'s Airhouse has [`TABLE`], creating it when it
+    /// is not there. [`SinkError::NotConfigured`] when the workspace has no
+    /// Airhouse. The backfill calls it first, so a workspace with no usage yet
+    /// still has a table to read once it is marked copied.
+    async fn prepare(
+        &self,
+        _db: &DatabaseConnection,
+        _workspace_id: Uuid,
+    ) -> Result<(), SinkError> {
+        Ok(())
+    }
+
+    /// Run a read-only `sql` against `workspace_id`'s Airhouse. It may use no
+    /// index, key or constraint: DuckLake has none.
+    async fn query(
+        &self,
+        _db: &DatabaseConnection,
+        _workspace_id: Uuid,
+        _sql: &str,
+    ) -> Result<SqlRows, SinkError> {
+        Err(SinkError::NotConfigured)
+    }
 }
 
 static SINK: LazyLock<RwLock<Arc<dyn UsageSink>>> =
@@ -316,6 +420,12 @@ pub fn failed_total() -> u64 {
     FAILED.load(Ordering::Relaxed)
 }
 
+/// Count `n` facts that will not reach Airhouse for a reason outside this
+/// module: the usage queue was full, or the database could not be reached.
+pub fn count_failed(n: u64) {
+    FAILED.fetch_add(n, Ordering::Relaxed);
+}
+
 /// Workspace → when it may be tried again after a failed append.
 static BACKOFF: LazyLock<Mutex<HashMap<Uuid, Instant>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -337,6 +447,11 @@ fn start_backoff(workspace_id: Uuid, now: Instant) {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .insert(workspace_id, now + FAILURE_BACKOFF);
+}
+
+/// The process's sink: Airhouse in production, a fake in tests.
+pub fn sink() -> Arc<dyn UsageSink> {
+    current_sink()
 }
 
 /// Whether the drain has anywhere to send facts. Checked once per batch.
@@ -438,6 +553,19 @@ pub async fn publish(db: &DatabaseConnection, facts: Vec<(Uuid, UsageFact)>) {
                 );
             }
         }
+    }
+}
+
+/// Queue the SDK event `row`, just written to Postgres by
+/// [`record_event`](crate::tracking::record_event), for the drain to append to
+/// its workspace's Airhouse in the next batch.
+///
+/// The same best effort as the beacon's, and behind the Postgres write: the
+/// queue is bounded and drops when full, and nothing happens where no sink is
+/// enabled.
+pub fn mirror_event(row: custom_app_event::Model) {
+    if enabled() {
+        crate::usage_queue::enqueue(crate::usage_queue::UsageJob::Mirror(Box::new(row)));
     }
 }
 
@@ -548,6 +676,53 @@ impl UsageSink for AirhouseUsageSink {
             .await
             .map_err(|e| SinkError::Failed(truncate(pg_text(&e))))?;
         Ok(())
+    }
+
+    async fn prepare(&self, db: &DatabaseConnection, workspace_id: Uuid) -> Result<(), SinkError> {
+        if !self.has_tenant(db, workspace_id).await? {
+            return Err(SinkError::NotConfigured);
+        }
+        self.ensure_table(workspace_id).await
+    }
+
+    async fn query(
+        &self,
+        db: &DatabaseConnection,
+        workspace_id: Uuid,
+        sql: &str,
+    ) -> Result<SqlRows, SinkError> {
+        if !self.has_tenant(db, workspace_id).await? {
+            return Err(SinkError::NotConfigured);
+        }
+        // The analytics pool when there is one, so a person opening the tab
+        // never contends with the drain's inserts on the serving pool.
+        let client = oxy_cameras::airhouse::client::tenant_client(
+            workspace_id,
+            airhouse::UserRole::Reader,
+            airhouse::SystemPurpose::UsageRead,
+            oxy_cameras::airhouse::read_ttl(),
+            oxy_cameras::airhouse::client::Pool::Analytics,
+        )
+        .await
+        .map_err(|e| SinkError::Failed(truncate(e.to_string())))?;
+        let messages = client
+            .simple_query(sql)
+            .await
+            .map_err(|e| SinkError::Failed(truncate(pg_text(&e))))?;
+        let mut out = SqlRows::default();
+        for message in messages {
+            if let SimpleQueryMessage::Row(row) = message {
+                if out.columns.is_empty() {
+                    out.columns = row.columns().iter().map(|c| c.name().to_string()).collect();
+                }
+                out.rows.push(
+                    (0..row.len())
+                        .map(|i| row.get(i).map(str::to_string))
+                        .collect(),
+                );
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -669,10 +844,15 @@ mod tests {
         assert!(sql.contains(&format!("'{}'", Uuid::from_u128(5))));
         assert!(sql.contains("WHERE NOT EXISTS"));
         assert!(sql.contains("t.event_id = v.event_id"));
-        // Looks back from the batch's oldest occurred_at (the view, at(0)).
+        // Looks at the batch's own range, a second either side: from the
+        // oldest occurred_at (the view, at(0)) to the newest (the event, at(10)).
         assert!(sql.contains(&format!(
             "t.occurred_at >= TIMESTAMPTZ '{}'",
-            at(0).to_rfc3339()
+            at(-1).to_rfc3339()
+        )));
+        assert!(sql.contains(&format!(
+            "t.occurred_at <= TIMESTAMPTZ '{}'",
+            at(11).to_rfc3339()
         )));
         // Quotes are doubled; absent columns are NULL, not empty strings.
         assert!(sql.contains("'o''brien@example.com'"));
@@ -721,6 +901,84 @@ mod tests {
         let tuple_commas = fact.values_tuple().matches(", ").count();
         assert_eq!(tuple_commas + 1, COLUMNS.len());
         assert!(tuple.starts_with('(') && tuple.ends_with(')'));
+    }
+
+    /// A clock reading has nanoseconds; Postgres and DuckDB keep microseconds.
+    /// The literal is cut the way Postgres cuts, so a copy of a Postgres row
+    /// and the fact the drain wrote for it are the same value.
+    #[test]
+    fn timestamps_are_written_at_microsecond_precision() {
+        let t = Utc.timestamp_opt(1_790_000_000, 123_456_789).unwrap();
+        let literal = ts_literal(t);
+        assert!(literal.starts_with("TIMESTAMPTZ '"), "{literal}");
+        assert!(literal.ends_with(".123456+00:00'"), "{literal}");
+        assert_eq!(micros(t).timestamp_subsec_nanos(), 123_456_000);
+        assert_eq!(micros(micros(t)), micros(t));
+    }
+
+    #[test]
+    fn a_stored_row_maps_to_the_same_fact_as_its_active_model() {
+        let view = view_row();
+        let model = custom_app_view_event::Model {
+            id: Uuid::from_u128(1),
+            app_id: Uuid::from_u128(2),
+            user_id: Uuid::from_u128(3),
+            user_email: "o'brien@example.com".into(),
+            session_id: Uuid::from_u128(4),
+            viewed_at: at(0).fixed_offset(),
+            referrer: Some("/orders".into()),
+            user_agent_class: "browser".into(),
+            source: "subpath".into(),
+            app_role: Some("admin".into()),
+            org_role: None,
+            environment: "production".into(),
+        };
+        let org = Uuid::from_u128(9);
+        assert_eq!(
+            UsageFact::from_view_model(&model, org, at(60)),
+            UsageFact::from_view(&view, org, at(60)).unwrap()
+        );
+        let event = event_row();
+        let model = custom_app_event::Model {
+            id: Uuid::from_u128(5),
+            app_id: Uuid::from_u128(2),
+            user_id: Uuid::from_u128(3),
+            user_email: "a@example.com".into(),
+            session_id: Uuid::from_u128(4),
+            event_name: "oxy-pageview".into(),
+            payload: serde_json::json!({ "path": "/orders" }),
+            occurred_at: at(10).fixed_offset(),
+            environment: "staging".into(),
+        };
+        assert_eq!(
+            UsageFact::from_event_model(&model, org, at(60)),
+            UsageFact::from_event(&event, org, at(60)).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_result_row_is_read_by_column_name_and_type() {
+        let rows = SqlRows {
+            columns: vec!["n".into(), "who".into(), "at".into(), "gone".into()],
+            rows: vec![vec![
+                Some("42".into()),
+                Some(Uuid::from_u128(3).to_string()),
+                Some("1790000000123456".into()),
+                None,
+            ]],
+        };
+        let row = rows.iter().next().unwrap();
+        assert_eq!(row.int("n").unwrap(), 42);
+        assert_eq!(row.uuid("who").unwrap(), Uuid::from_u128(3));
+        assert_eq!(
+            row.ts("at").unwrap(),
+            Utc.timestamp_opt(1_790_000_000, 123_456_000).unwrap()
+        );
+        assert_eq!(row.opt_ts("gone").unwrap(), None);
+        assert_eq!(row.opt_int("gone").unwrap(), None);
+        assert!(row.text("gone").is_err(), "NULL is not text");
+        assert!(row.int("who").is_err(), "a uuid is not an integer");
+        assert!(row.int("missing").is_err(), "an absent column is an error");
     }
 
     #[test]

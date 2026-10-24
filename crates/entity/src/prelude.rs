@@ -29,6 +29,7 @@ pub use super::chat_messages::Entity as ChatMessages;
 pub use super::cli_auth_codes::Entity as CliAuthCodes;
 pub use super::cli_device_requests::Entity as CliDeviceRequests;
 pub use super::custom_app_event::Entity as CustomAppEvent;
+pub use super::custom_app_usage_backfill::Entity as CustomAppUsageBackfill;
 pub use super::custom_app_view_event::Entity as CustomAppViewEvent;
 pub use super::device_tokens::Entity as DeviceTokens;
 pub use super::document_categories::Entity as DocumentCategories;

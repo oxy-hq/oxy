@@ -84,6 +84,9 @@ pub mod custom_apps_shell_context;
 pub mod custom_apps_staging_held;
 pub mod custom_apps_tail;
 pub mod custom_apps_threads;
+/// The task that copies a workspace's usage history into its Airhouse, and the
+/// sweep that queues it.
+pub mod custom_apps_usage_backfill;
 pub mod custom_apps_validate;
 pub mod custom_domains;
 pub mod function_runtime;
@@ -132,6 +135,7 @@ pub use oxy_custom_apps::tracking as custom_apps_tracking;
 pub use oxy_custom_apps::updates as custom_apps_updates;
 pub use oxy_custom_apps::usage_airhouse as custom_apps_usage_airhouse;
 pub use oxy_custom_apps::usage_queue as custom_apps_usage_queue;
+pub use oxy_custom_apps::usage_reads as custom_apps_usage_reads;
 
 /// A sandbox agent token on the custom-app serving paths: the admission rules
 /// (`oxy_custom_apps::agent`) and the usage count that wraps `/fn` and `/logs`.

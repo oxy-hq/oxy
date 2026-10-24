@@ -8,6 +8,12 @@ publish.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+# `usage_fixtures`: an in-process stand-in for a workspace's Airhouse (DuckDB
+# in memory) behind the usage sink, and a small usage history to put in both
+# stores. For the tests of this crate and of the crates that read usage.
+test-fixtures = ["dep:duckdb"]
+
 [dependencies]
 agentic-connector = { workspace = true }
 airhouse = { workspace = true, features = ["connector", "rest"] }
@@ -35,6 +41,7 @@ brotli = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
+duckdb = { workspace = true, optional = true }
 futures = { workspace = true }
 # Header and status types only (the serve resolver takes the request's headers
 # and answers with a status); no framework.
@@ -60,6 +67,8 @@ uuid = { workspace = true }
 workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [dev-dependencies]
+# `usage_fixtures`' stand-in for Airhouse, for this crate's own tests.
+duckdb = { workspace = true }
 oxy-app-core = { workspace = true, features = ["test-fixtures"] }
 futures = { workspace = true }
 tokio = { workspace = true }

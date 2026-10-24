@@ -1,17 +1,20 @@
 //! Reads one week of custom-app usage, and the week before it, out of Oxy's
-//! Postgres.
+//! Postgres — and, for an app whose workspace has its usage in Airhouse, out of
+//! that.
 //!
-//! Five tables, all of which the platform already writes: the view row per
-//! page served (`custom_app_view_event`), the page's own error beacon
-//! (`custom_app_event`, name `oxy-error` — counted, its payload never read),
-//! the row per function invocation (`app_function_invocations`), the release
-//! log (`app_environment_events`, promotions to production) and the storage
+//! Five sources, all of which the platform already writes: the view row per
+//! page served and the page's own error beacon (name `oxy-error` — counted, its
+//! payload never read), which `oxy_custom_apps::usage_reads` reads from
+//! `custom_app_view_event` / `custom_app_event` or from the workspace's
+//! `oxy_custom_app_usage` — the same choice the Activity tab makes — the row per
+//! function invocation (`app_function_invocations`), the release log
+//! (`app_environment_events`, promotions to production) and the storage
 //! sweeper's size samples (`app_storage_usage_samples`). Only the `production`
 //! environment counts: a developer opening a sandbox is not usage.
 //!
-//! Every query names the apps it wants (`app_id = ANY`), which is what lets it
-//! use each table's `(app_id, …, time)` index. The invocation table is never
-//! pruned, so a scan by time alone would read all of it.
+//! Every Postgres query names the apps it wants (`app_id = ANY`), which is what
+//! lets it use each table's `(app_id, …, time)` index. The invocation table is
+//! never pruned, so a scan by time alone would read all of it.
 
 use std::collections::{HashMap, HashSet};
 
@@ -19,45 +22,16 @@ use chrono::{DateTime, Utc};
 use sea_orm::{DatabaseConnection, DbErr, FromQueryResult, Statement, Value};
 use uuid::Uuid;
 
+use oxy_custom_apps::usage_reads::{self, ReportApp};
+pub(super) use oxy_custom_apps::usage_reads::{ErrorRow, PersonRow, ViewRow};
+
 use super::model::{AppUsage, Counts, OrgUsage, Snapshot};
 use super::period::Period;
 
 const CATALOG_SQL: &str = "\
-SELECT a.id AS app_id, a.org_id, a.name, a.slug, a.published_at, \
+SELECT a.id AS app_id, a.org_id, a.project_id AS workspace_id, a.name, a.slug, a.published_at, \
        o.name AS org_name, o.slug AS org_slug \
 FROM apps a JOIN organizations o ON o.id = a.org_id";
-
-// $1 start of the week before, $2 start of the week, $3 its end, $4 the apps.
-const VIEWS_SQL: &str = "\
-SELECT app_id, \
-       COUNT(*) FILTER (WHERE viewed_at >= $2)::bigint AS views, \
-       COUNT(DISTINCT user_id) FILTER (WHERE viewed_at >= $2)::bigint AS people, \
-       COUNT(DISTINCT session_id) FILTER (WHERE viewed_at >= $2)::bigint AS sessions, \
-       COUNT(*) FILTER (WHERE viewed_at < $2)::bigint AS prev_views, \
-       COUNT(DISTINCT user_id) FILTER (WHERE viewed_at < $2)::bigint AS prev_people, \
-       COUNT(DISTINCT session_id) FILTER (WHERE viewed_at < $2)::bigint AS prev_sessions \
-FROM custom_app_view_event \
-WHERE app_id = ANY($4) AND environment = 'production' \
-  AND viewed_at >= $1 AND viewed_at < $3 \
-GROUP BY app_id";
-
-const ORG_PEOPLE_SQL: &str = "\
-SELECT a.org_id, \
-       COUNT(DISTINCT v.user_id) FILTER (WHERE v.viewed_at >= $2)::bigint AS people, \
-       COUNT(DISTINCT v.user_id) FILTER (WHERE v.viewed_at < $2)::bigint AS prev_people \
-FROM custom_app_view_event v JOIN apps a ON a.id = v.app_id \
-WHERE v.app_id = ANY($4) AND v.environment = 'production' \
-  AND v.viewed_at >= $1 AND v.viewed_at < $3 \
-GROUP BY a.org_id";
-
-const ERRORS_SQL: &str = "\
-SELECT app_id, \
-       COUNT(DISTINCT session_id) FILTER (WHERE occurred_at >= $2)::bigint AS errored, \
-       COUNT(DISTINCT session_id) FILTER (WHERE occurred_at < $2)::bigint AS prev_errored \
-FROM custom_app_event \
-WHERE app_id = ANY($4) AND environment = 'production' AND event_name = 'oxy-error' \
-  AND occurred_at >= $1 AND occurred_at < $3 \
-GROUP BY app_id";
 
 const FUNCTIONS_SQL: &str = "\
 SELECT app_id, \
@@ -86,17 +60,12 @@ FROM app_storage_usage_samples \
 WHERE app_id = ANY($1) AND measured_at < $2 \
 ORDER BY app_id, measured_at DESC";
 
-// $1 the apps to ask about, $2 the instant to look before.
-const SEEN_BEFORE_SQL: &str = "\
-SELECT t.app_id FROM unnest($1::uuid[]) AS t(app_id) \
-WHERE EXISTS (SELECT 1 FROM custom_app_view_event v \
-              WHERE v.app_id = t.app_id AND v.environment = 'production' \
-                AND v.viewed_at < $2)";
-
 #[derive(Clone, Debug, FromQueryResult)]
 pub(super) struct CatalogRow {
     pub app_id: Uuid,
     pub org_id: Uuid,
+    /// The app's workspace: whose store holds its page views and error beacons.
+    pub workspace_id: Uuid,
     pub name: String,
     pub slug: String,
     pub published_at: Option<DateTime<Utc>>,
@@ -104,29 +73,11 @@ pub(super) struct CatalogRow {
     pub org_slug: String,
 }
 
-#[derive(Clone, Debug, Default, FromQueryResult)]
-pub(super) struct ViewRow {
-    pub app_id: Uuid,
-    pub views: i64,
-    pub people: i64,
-    pub sessions: i64,
-    pub prev_views: i64,
-    pub prev_people: i64,
-    pub prev_sessions: i64,
-}
-
-#[derive(Clone, Debug, Default, FromQueryResult)]
+#[derive(Clone, Debug, Default)]
 pub(super) struct OrgPeopleRow {
     pub org_id: Uuid,
     pub people: i64,
     pub prev_people: i64,
-}
-
-#[derive(Clone, Debug, Default, FromQueryResult)]
-pub(super) struct ErrorRow {
-    pub app_id: Uuid,
-    pub errored: i64,
-    pub prev_errored: i64,
 }
 
 #[derive(Clone, Debug, Default, FromQueryResult)]
@@ -149,11 +100,6 @@ pub(super) struct ReleaseRow {
 pub(super) struct StorageRow {
     pub app_id: Uuid,
     pub bytes: i64,
-}
-
-#[derive(FromQueryResult)]
-struct AppIdRow {
-    app_id: Uuid,
 }
 
 /// Everything the queries returned, before it is shaped into a report.
@@ -189,26 +135,78 @@ pub async fn collect(db: &DatabaseConnection, period: Period) -> Result<Snapshot
         ]
     };
     let size_before = |at: DateTime<Utc>| -> Vec<Value> { vec![app_ids.clone().into(), at.into()] };
-    let views: Vec<ViewRow> = rows(db, VIEWS_SQL, window()).await?;
-    let returning: Vec<Uuid> = views
+    // Page views and error beacons: each app's workspace says which store holds
+    // them (`usage_reads`), the same way it does for the Activity tab.
+    let apps: Vec<ReportApp> = catalog
+        .iter()
+        .map(|a| ReportApp {
+            app_id: a.app_id,
+            workspace_id: a.workspace_id,
+        })
+        .collect();
+    let usage = usage_reads::report_usage(
+        db,
+        &apps,
+        usage_reads::Window {
+            previous_start: period.previous().start,
+            start: period.start,
+            end: period.end,
+        },
+    )
+    .await?;
+    let returning: HashSet<Uuid> = usage
+        .views
         .iter()
         .filter(|v| v.people > 0 && v.prev_people == 0)
         .map(|v| v.app_id)
         .collect();
     // These apps had no view in the week before, so "before that week" finds
     // the same rows as "before this one" over a shorter index range.
-    let seen_before = seen_before(db, returning, period.previous().start).await?;
+    let returning: Vec<ReportApp> = apps
+        .iter()
+        .filter(|a| returning.contains(&a.app_id))
+        .copied()
+        .collect();
+    let seen_before =
+        usage_reads::apps_seen_before(db, &returning, period.previous().start).await?;
     let raw = Raw {
-        org_people: rows(db, ORG_PEOPLE_SQL, window()).await?,
-        errors: rows(db, ERRORS_SQL, window()).await?,
+        org_people: org_people(&catalog, &usage.people),
+        errors: usage.errors,
         functions: rows(db, FUNCTIONS_SQL, window()).await?,
         releases: rows(db, RELEASES_SQL, window()).await?,
         storage: rows(db, STORAGE_SQL, size_before(period.end)).await?,
         storage_before: rows(db, STORAGE_SQL, size_before(period.start)).await?,
         seen_before,
-        views,
+        views: usage.views,
     };
     Ok(assemble(period, catalog, raw))
+}
+
+/// People per org, this week and the week before: a person who opened two of an
+/// org's apps is one person, whichever stores the two apps' views are in.
+fn org_people(catalog: &[CatalogRow], people: &[PersonRow]) -> Vec<OrgPeopleRow> {
+    let org_of: HashMap<Uuid, Uuid> = catalog.iter().map(|a| (a.app_id, a.org_id)).collect();
+    let mut current: HashMap<Uuid, HashSet<Uuid>> = HashMap::new();
+    let mut previous: HashMap<Uuid, HashSet<Uuid>> = HashMap::new();
+    for person in people {
+        let Some(org) = org_of.get(&person.app_id) else {
+            continue;
+        };
+        if person.views > 0 {
+            current.entry(*org).or_default().insert(person.user_id);
+        }
+        if person.prev_views > 0 {
+            previous.entry(*org).or_default().insert(person.user_id);
+        }
+    }
+    let orgs: HashSet<Uuid> = current.keys().chain(previous.keys()).copied().collect();
+    orgs.into_iter()
+        .map(|org_id| OrgPeopleRow {
+            org_id,
+            people: current.get(&org_id).map_or(0, |s| s.len() as i64),
+            prev_people: previous.get(&org_id).map_or(0, |s| s.len() as i64),
+        })
+        .collect()
 }
 
 async fn rows<T: FromQueryResult>(
@@ -218,20 +216,6 @@ async fn rows<T: FromQueryResult>(
 ) -> Result<Vec<T>, DbErr> {
     let statement = Statement::from_sql_and_values(db.get_database_backend(), sql, values);
     T::find_by_statement(statement).all(db).await
-}
-
-/// Which of `candidates` somebody opened before `before`.
-async fn seen_before(
-    db: &DatabaseConnection,
-    candidates: Vec<Uuid>,
-    before: DateTime<Utc>,
-) -> Result<HashSet<Uuid>, DbErr> {
-    if candidates.is_empty() {
-        return Ok(HashSet::new());
-    }
-    let found: Vec<AppIdRow> =
-        rows(db, SEEN_BEFORE_SQL, vec![candidates.into(), before.into()]).await?;
-    Ok(found.into_iter().map(|r| r.app_id).collect())
 }
 
 fn n(count: i64) -> u64 {

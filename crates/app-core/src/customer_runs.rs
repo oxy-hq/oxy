@@ -42,6 +42,8 @@
 /// custom app's staging homes migrated after a publish, nor a sandbox's
 /// (`custom_app_sandbox_migrations`, `custom_app_sandbox_oltp`) or its teardown
 /// (`custom_app_sandbox_teardown`): staff trying a build, not the tenant's work.
+/// Nor does `custom_app_usage_backfill`, the platform copying a workspace's usage
+/// history to its Airhouse.
 const NON_WORKSPACE_RUN_SOURCES: &[&str] = &[
     "health_eval_workspace",
     "preagg_cycle",
@@ -53,6 +55,7 @@ const NON_WORKSPACE_RUN_SOURCES: &[&str] = &[
     "custom_app_sandbox_migrations",
     "custom_app_sandbox_oltp",
     "custom_app_sandbox_teardown",
+    "custom_app_usage_backfill",
 ];
 
 /// SQL predicate excluding [`NON_WORKSPACE_RUN_SOURCES`], for a table aliased

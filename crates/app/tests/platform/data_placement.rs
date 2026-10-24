@@ -266,17 +266,26 @@ const TABLES: &[(&str, Placement)] = &[
         "custom_app_event",
         Backlog {
             holds: "app SDK events with a free-form payload",
-            belongs: "Airhouse. The usage drain already appends the beacon's oxy-* rows to the \
-                      workspace's oxy_custom_app_usage (W2.3b); these rows go once the Activity \
-                      tab and the release timeline's vitals read \
-                      (admin::apps::releases::vitals, its one reader of oxy-web-vitals) read \
-                      it, with retention and a backfill. SDK events recorded through \
-                      record_event are not appended yet",
+            belongs: "Airhouse. The usage drain and record_event already append these rows to \
+                      the workspace's oxy_custom_app_usage, a backfill copies the history, and \
+                      the Activity tab and the weekly report read it for a backfilled workspace. \
+                      These rows go once the release timeline's vitals \
+                      (admin::apps::releases::vitals, its one reader of oxy-web-vitals), the \
+                      platform facts and the app list read it too, with retention, and no app is \
+                      left without an Airhouse (the counting SQL is in data-placement.md)",
         },
     ),
     (
         "custom_app_migrations",
         Control("applied schema ledger per app"),
+    ),
+    (
+        "custom_app_usage_backfill",
+        Control(
+            "per workspace, how far copying its usage history into its Airhouse has got: \
+             timestamps, a count and a resume position, no usage content; the row that says \
+             finished is what moves the Activity tab and the weekly report to Airhouse",
+        ),
     ),
     (
         "custom_app_usage_report_deliveries",
@@ -291,10 +300,12 @@ const TABLES: &[(&str, Placement)] = &[
         Backlog {
             holds: "who opened which app: viewer email, session, role snapshot",
             belongs: "Airhouse. The usage drain already appends these to the workspace's \
-                      oxy_custom_app_usage (W2.3b); the role snapshot is resolved from \
-                      control-plane tables when the row is written and travels with the fact. \
-                      These rows go once the Activity tab and the weekly report read Airhouse, \
-                      with retention and a backfill",
+                      oxy_custom_app_usage (W2.3b), a backfill copies the history, and the \
+                      Activity tab and the weekly report read it for a backfilled workspace; the \
+                      role snapshot is resolved from control-plane tables when the row is \
+                      written and travels with the fact. These rows go once the platform facts \
+                      and the app list read Airhouse too, with retention, and no app is left \
+                      without an Airhouse (the counting SQL is in data-placement.md)",
         },
     ),
     (

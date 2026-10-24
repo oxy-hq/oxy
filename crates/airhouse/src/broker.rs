@@ -205,6 +205,11 @@ pub enum SystemPurpose {
     /// as Admin under the same purpose). Its own audit segment, so the volume
     /// of usage appends never reads as edge ingest.
     UsageIngest,
+    /// The Activity tab and the weekly usage report reading
+    /// `oxy_custom_app_usage` back once a workspace's history is copied
+    /// (`oxy_custom_apps::usage_reads`). Always a Reader, and its own audit
+    /// segment so a person opening the tab never reads as the drain's writes.
+    UsageRead,
 }
 
 impl SystemPurpose {
@@ -218,6 +223,7 @@ impl SystemPurpose {
             SystemPurpose::Preview => "preview",
             SystemPurpose::PreviewDdl => "preview-ddl",
             SystemPurpose::UsageIngest => "custom-app-usage",
+            SystemPurpose::UsageRead => "custom-app-usage-read",
         }
     }
 }

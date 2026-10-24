@@ -34,6 +34,11 @@
 //!   instance of a sandbox a log line belongs to.
 //! - `tracking`, `usage_queue`, `usage_airhouse`: page views and custom events,
 //!   the bounded queue they are `try_send`-ed onto and the sink that drains it.
+//! - `usage_backfill`: copies a workspace's usage history from Postgres into its
+//!   Airhouse, one control-plane row per workspace.
+//! - `usage_reads`: the Activity tab's and the weekly report's reads of usage,
+//!   from a workspace's Airhouse once its backfill finished and from Postgres
+//!   until then.
 //! - `gate`: the data-plane gate's decision half (user, workspace row, access
 //!   verdict) and the context it resolves; `oxy-app` keeps the request-facing entry.
 //! - `call_trace`, `call_trace_store`: every `ctx.*` call of one function
@@ -85,5 +90,10 @@ pub mod thread_source;
 pub mod tracking;
 pub mod updates;
 pub mod usage_airhouse;
+pub mod usage_backfill;
+#[cfg(any(test, feature = "test-fixtures"))]
+pub mod usage_fixtures;
 pub mod usage_queue;
+pub mod usage_reads;
+pub mod usage_rows;
 pub mod write_record;

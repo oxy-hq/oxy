@@ -1,5 +1,5 @@
 //! The custom-app work this composition root hands `oxy-app` through
-//! [`SurfaceSeams`](oxy_app::server::router::SurfaceSeams): the five task kinds
+//! [`SurfaceSeams`](oxy_app::server::router::SurfaceSeams): the six task kinds
 //! the worker fleet runs, the process-lifetime background jobs, the outer
 //! `/customer-apps/{*path}` mount, the function runtime for the `oxy-app`
 //! handlers that run a function, and the `oxy migrate` and `oxy seed` halves.
@@ -22,6 +22,7 @@ use oxy_api_custom_apps::custom_apps_nonproduction::{staging_task, staging_task_
 use oxy_api_custom_apps::custom_apps_sandboxes::{
     maintenance, migrations_task, oltp_task, teardown,
 };
+use oxy_api_custom_apps::custom_apps_usage_backfill::{self, USAGE_BACKFILL_KIND};
 use oxy_api_custom_apps::serve as custom_apps_serve;
 use oxy_app::server::api::middlewares::workspace_context::PreaggCacheCtx;
 use oxy_app::server::api::projects::query::DataPlaneQueryExecutor;
@@ -88,6 +89,17 @@ pub(crate) fn tasks() -> Vec<TaskSeam> {
             kind: oltp_task::SANDBOX_OLTP_KIND,
             build: |deps| {
                 Arc::new(oltp_task::SandboxOltpExecutor {
+                    db: deps.db.clone(),
+                })
+            },
+        },
+        // A workspace's custom-app usage history copied from Postgres into its
+        // Airhouse, queued by the backfill sweep below. `oxy-app` queues none
+        // of these, so the kind is not in `CUSTOM_APP_TASK_KINDS`.
+        TaskSeam {
+            kind: USAGE_BACKFILL_KIND,
+            build: |deps| {
+                Arc::new(custom_apps_usage_backfill::UsageBackfillExecutor {
                     db: deps.db.clone(),
                 })
             },
@@ -198,6 +210,20 @@ pub(crate) fn background() -> Vec<BackgroundSeam> {
                         tracing::warn!(error = %e, "custom-app log tail listener not installed")
                     }
                 }
+                None
+            },
+        },
+        // Queue the usage backfill for each workspace that has an Airhouse and
+        // is not yet marked finished. Singleton-gated: two replicas sweeping
+        // would only race to queue the same tasks.
+        BackgroundSeam {
+            name: "custom_app_usage_backfill_sweep",
+            start: |deps| {
+                custom_apps_usage_backfill::spawn_sweep(
+                    deps.db.clone(),
+                    deps.shutdown.clone(),
+                    deps.singleton,
+                );
                 None
             },
         },
@@ -330,11 +356,12 @@ mod tests {
         assert_eq!(encoding("/x.js").await.as_deref(), Some("br"));
     }
 
-    /// The task kinds the fleet knew before this list was handed in. A kind
-    /// added here, or dropped, is a change to what a worker can run, so it is
-    /// spelled out rather than derived from the constants it is built from.
+    /// The task kinds the fleet knew before this list was handed in, plus the
+    /// usage backfill. A kind added here, or dropped, is a change to what a
+    /// worker can run, so it is spelled out rather than derived from the
+    /// constants it is built from.
     #[test]
-    fn the_task_kinds_are_exactly_the_five_the_fleet_knew() {
+    fn the_task_kinds_are_exactly_these_six() {
         let mut kinds: Vec<&str> = tasks().iter().map(|t| t.kind).collect();
         kinds.sort_unstable();
         assert_eq!(
@@ -345,16 +372,18 @@ mod tests {
                 "custom_app_sandbox_oltp",
                 "custom_app_sandbox_teardown",
                 "custom_app_staging_migrations",
+                "custom_app_usage_backfill",
             ]
         );
     }
 
     /// Same for the background jobs: the five `api_router` and `serve` started
-    /// by name before, plus the log tail's listener and the function limits'
-    /// boot-time resolution. `SurfaceSeams::require_custom_apps` refuses to
-    /// start without every one of them.
+    /// by name before, plus the log tail's listener, the function limits'
+    /// boot-time resolution and the usage backfill sweep.
+    /// `SurfaceSeams::require_custom_apps` refuses to start without the seven
+    /// it names; the sweep is not one of them, because serving does not need it.
     #[test]
-    fn the_background_jobs_are_exactly_the_seven_the_composition_root_starts() {
+    fn the_background_jobs_are_exactly_the_eight_the_composition_root_starts() {
         let mut names: Vec<&str> = background().iter().map(|b| b.name).collect();
         names.sort_unstable();
         assert_eq!(
@@ -366,6 +395,7 @@ mod tests {
                 "custom_app_storage_sweeper",
                 "custom_app_tail_listener",
                 "custom_app_tracking_retention",
+                "custom_app_usage_backfill_sweep",
                 "custom_app_usage_drain",
             ]
         );

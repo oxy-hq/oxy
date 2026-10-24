@@ -16,7 +16,10 @@
 //!    app-admin (mirrors the rest of `/api/admin/apps/` access).
 //!
 //! Storage is PostgreSQL — see the design (now embedded in
-//! `internal-docs/customer-apps.md` §13) for the rationale.
+//! `internal-docs/customer-apps.md` §13) for the rationale — and, for a
+//! workspace whose usage backfill has finished, its own Airhouse. The three
+//! Activity reads go through [`oxy_custom_apps::usage_reads`], which makes that
+//! choice; the report mail makes it the same way.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -26,11 +29,12 @@ use axum::Json;
 use axum::extract::{Path, Query};
 use axum::http::{HeaderMap, StatusCode};
 use chrono::{DateTime, FixedOffset, Utc};
-use entity::{apps, custom_app_event, custom_app_view_event};
+use entity::apps;
 use oxy::database::client::establish_connection;
+use oxy_custom_apps::usage_reads;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, Statement,
+    ColumnTrait, DatabaseConnection, EntityTrait, FromQueryResult, QueryFilter, QueryOrder,
+    Statement,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -390,9 +394,6 @@ pub async fn post_event(
 // events are not the app's: counting them would put release testing in the
 // numbers a customer is shown.
 
-/// The environment the Activity tab reports on.
-const PRODUCTION: &str = "production";
-
 #[derive(Debug, Serialize)]
 pub struct ActivitySummary {
     pub total_views_7d: i64,
@@ -408,66 +409,16 @@ pub async fn get_summary(
     let db = establish_connection()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let cutoff = (Utc::now() - chrono::Duration::days(7)).fixed_offset();
-
-    let total_views_7d = custom_app_view_event::Entity::find()
-        .filter(custom_app_view_event::Column::AppId.eq(app_id))
-        .filter(custom_app_view_event::Column::Environment.eq(PRODUCTION))
-        .filter(custom_app_view_event::Column::ViewedAt.gte(cutoff))
-        .count(&db)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        as i64;
-
-    let unique_users_7d = unique_user_count(&db, app_id, cutoff)
+    let cutoff = Utc::now() - chrono::Duration::days(7);
+    let found = usage_reads::summary(&db, app_id, cutoff)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let total_events_7d = custom_app_event::Entity::find()
-        .filter(custom_app_event::Column::AppId.eq(app_id))
-        .filter(custom_app_event::Column::Environment.eq(PRODUCTION))
-        .filter(custom_app_event::Column::OccurredAt.gte(cutoff))
-        .count(&db)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        as i64;
-
-    let last_viewed_at = custom_app_view_event::Entity::find()
-        .filter(custom_app_view_event::Column::AppId.eq(app_id))
-        .filter(custom_app_view_event::Column::Environment.eq(PRODUCTION))
-        .order_by_desc(custom_app_view_event::Column::ViewedAt)
-        .one(&db)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .map(|r| r.viewed_at);
-
     Ok(Json(ActivitySummary {
-        total_views_7d,
-        unique_users_7d,
-        total_events_7d,
-        last_viewed_at,
+        total_views_7d: found.views,
+        unique_users_7d: found.unique_users,
+        total_events_7d: found.events,
+        last_viewed_at: found.last_viewed_at,
     }))
-}
-
-async fn unique_user_count(
-    db: &DatabaseConnection,
-    app_id: Uuid,
-    cutoff: DateTime<FixedOffset>,
-) -> Result<i64, sea_orm::DbErr> {
-    #[derive(FromQueryResult)]
-    struct Count {
-        n: i64,
-    }
-    let backend = db.get_database_backend();
-    let stmt = Statement::from_sql_and_values(
-        backend,
-        r#"SELECT COUNT(DISTINCT user_id)::bigint AS n
-           FROM custom_app_view_event
-           WHERE app_id = $1 AND viewed_at >= $2 AND environment = 'production'"#,
-        [app_id.into(), cutoff.into()],
-    );
-    let row = Count::find_by_statement(stmt).one(db).await?;
-    Ok(row.map(|r| r.n).unwrap_or(0))
 }
 
 #[derive(Debug, Deserialize)]
@@ -514,57 +465,10 @@ pub async fn get_visitors(
     let db = establish_connection()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let cutoff = (Utc::now() - chrono::Duration::days(q.days)).fixed_offset();
-
-    #[derive(FromQueryResult)]
-    struct Row {
-        user_id: Uuid,
-        user_email: String,
-        sessions: i64,
-        views: i64,
-        first_seen_at: DateTime<FixedOffset>,
-        last_seen_at: DateTime<FixedOffset>,
-        app_role: Option<String>,
-        org_role: Option<String>,
-    }
-
-    // Roles are per-view snapshots, so a roll-up has to pick one. It picks the
-    // latest **recorded** value (`FILTER (WHERE … IS NOT NULL)`) rather than the
-    // value on the latest row, because NULL means "not recorded" — a row from
-    // before the columns existed, or one whose lookup failed — and letting that
-    // blank out a visitor whose role is perfectly well known would read as "no
-    // role" and be wrong in the direction that matters.
-    //
-    // Deliberately NOT a join to `app_members` / `org_members`: that would show
-    // today's role against last month's activity and silently rewrite the log.
-    // A visitor whose role changed mid-window shows their newest one here; the
-    // change itself is still visible row-by-row in the underlying table.
-    let backend = db.get_database_backend();
-    let stmt = Statement::from_sql_and_values(
-        backend,
-        r#"SELECT
-             user_id,
-             MAX(user_email) AS user_email,
-             COUNT(DISTINCT session_id)::bigint AS sessions,
-             COUNT(*)::bigint AS views,
-             MIN(viewed_at) AS first_seen_at,
-             MAX(viewed_at) AS last_seen_at,
-             (array_agg(app_role ORDER BY viewed_at DESC)
-                FILTER (WHERE app_role IS NOT NULL))[1] AS app_role,
-             (array_agg(org_role ORDER BY viewed_at DESC)
-                FILTER (WHERE org_role IS NOT NULL))[1] AS org_role
-           FROM custom_app_view_event
-           WHERE app_id = $1 AND viewed_at >= $2 AND environment = 'production'
-           GROUP BY user_id
-           ORDER BY last_seen_at DESC
-           LIMIT $3"#,
-        [app_id.into(), cutoff.into(), q.limit.into()],
-    );
-    let rows: Vec<Row> = Row::find_by_statement(stmt)
-        .all(&db)
+    let cutoff = Utc::now() - chrono::Duration::days(q.days);
+    let rows = usage_reads::visitors(&db, app_id, cutoff, q.limit)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
     Ok(Json(VisitorsResponse {
         rows: rows
             .into_iter()
@@ -627,17 +531,10 @@ pub async fn get_events(
     let db = establish_connection()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let cutoff = (Utc::now() - chrono::Duration::days(q.days)).fixed_offset();
+    let cutoff = Utc::now() - chrono::Duration::days(q.days);
 
     if let Some(name) = q.event_name {
-        let rows = custom_app_event::Entity::find()
-            .filter(custom_app_event::Column::AppId.eq(app_id))
-            .filter(custom_app_event::Column::Environment.eq(PRODUCTION))
-            .filter(custom_app_event::Column::EventName.eq(name))
-            .filter(custom_app_event::Column::OccurredAt.gte(cutoff))
-            .order_by_desc(custom_app_event::Column::OccurredAt)
-            .limit(q.limit as u64)
-            .all(&db)
+        let rows = usage_reads::event_occurrences(&db, app_id, &name, cutoff, q.limit)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         Ok(Json(EventsResponse::Occurrences {
@@ -653,28 +550,7 @@ pub async fn get_events(
                 .collect(),
         }))
     } else {
-        #[derive(FromQueryResult)]
-        struct Row {
-            event_name: String,
-            count: i64,
-            last_fired_at: DateTime<FixedOffset>,
-        }
-        let backend = db.get_database_backend();
-        let stmt = Statement::from_sql_and_values(
-            backend,
-            r#"SELECT
-                 event_name,
-                 COUNT(*)::bigint AS count,
-                 MAX(occurred_at) AS last_fired_at
-               FROM custom_app_event
-               WHERE app_id = $1 AND occurred_at >= $2 AND environment = 'production'
-               GROUP BY event_name
-               ORDER BY count DESC
-               LIMIT $3"#,
-            [app_id.into(), cutoff.into(), q.limit.into()],
-        );
-        let groups: Vec<Row> = Row::find_by_statement(stmt)
-            .all(&db)
+        let groups = usage_reads::event_groups(&db, app_id, cutoff, q.limit)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         Ok(Json(EventsResponse::Grouped {

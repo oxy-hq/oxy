@@ -111,6 +111,9 @@ workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [dev-dependencies]
 brotli = { workspace = true }
+# `usage_fixtures`: an in-memory stand-in for a workspace's Airhouse and a fixed
+# usage history, for the tests of the Activity tab's reads and the backfill.
+oxy-custom-apps = { workspace = true, features = ["test-fixtures"] }
 tower = { workspace = true, features = ["util"] }
 # The integration tests reuse oxy-app's harness (`#[path]`-included from
 # crates/app/tests/common), which clones a per-run template database and needs

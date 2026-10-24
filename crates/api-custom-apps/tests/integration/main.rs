@@ -144,6 +144,7 @@ mod custom_app_procedure_run_queue;
 mod custom_app_staging_held;
 mod custom_app_staging_pin;
 mod custom_app_storage_routes;
+mod custom_app_usage_airhouse_reads;
 mod custom_app_visibility;
 mod custom_apps_cache_invalidation;
 mod custom_apps_publish_function_artifacts;
