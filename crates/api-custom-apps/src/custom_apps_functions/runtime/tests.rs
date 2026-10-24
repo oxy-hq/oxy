@@ -165,7 +165,7 @@ use crate::custom_apps_functions::host_error::HostError;
 /// actually arrived, so a test can assert a payload survived the isolate
 /// boundary byte-for-byte. Everything else is unused.
 #[derive(Default)]
-struct MockHost {
+pub(super) struct MockHost {
     last_email: std::sync::Mutex<Option<serde_json::Value>>,
     /// What the last `ctx.notify` handed the host.
     last_notify: std::sync::Mutex<Option<serde_json::Value>>,
@@ -439,7 +439,7 @@ impl FunctionHost for MockHost {
     }
 }
 
-fn test_ctx() -> InvocationCtx {
+pub(super) fn test_ctx() -> InvocationCtx {
     InvocationCtx {
         user: CtxUser {
             id: "u".into(),

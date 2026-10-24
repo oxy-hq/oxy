@@ -64,6 +64,9 @@ mod snapshot_tests;
 mod test_calls;
 #[cfg(test)]
 mod tests;
+mod warm_pool;
+#[cfg(test)]
+mod warm_pool_tests;
 
 use super::LogLine;
 use super::env_policy::{EnvPolicy, HeldTarget, HostOp};
@@ -75,6 +78,7 @@ use host_call::HostCall;
 #[cfg(test)]
 use host_call::{dispatch_host_call, host_call_span, host_call_target};
 use ops::{FunctionLogs, OpContext};
+use warm_pool::Job;
 
 /// Per-invocation context handed to the isolate. Built fresh for every
 /// invocation from the resolved identity (design doc §11.7) — never cached
@@ -637,6 +641,37 @@ impl FnRequest {
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     artifact_js: String,
+    org_id: uuid::Uuid,
+    ctx: InvocationCtx,
+    req: FnRequest,
+    host: std::sync::Arc<dyn FunctionHost>,
+    cancel: oneshot::Receiver<()>,
+    timeout: std::time::Duration,
+    logs: Arc<std::sync::Mutex<Vec<LogLine>>>,
+    meters: InvocationMeters,
+    isolate_span: tracing::Span,
+) -> Result<FnResponse, RuntimeError> {
+    run_in(
+        warm_pool::global(),
+        artifact_js,
+        org_id,
+        ctx,
+        req,
+        host,
+        cancel,
+        timeout,
+        logs,
+        meters,
+        isolate_span,
+    )
+    .await
+}
+
+/// [`run`] on an explicit warm pool, so a test can pick the pool's size.
+#[allow(clippy::too_many_arguments)]
+async fn run_in(
+    pool: &Arc<warm_pool::WarmPool>,
+    artifact_js: String,
     // Whose invocation this is, for the per-org concurrency ceiling. Not part
     // of `InvocationCtx` on purpose: that struct is serialized into the isolate
     // as `ctx`, and the org id is a platform fact the tenant has no business
@@ -701,82 +736,27 @@ pub async fn run(
     let (handle_tx, handle_rx) = oneshot::channel::<<ActiveEngine as IsolateEngine>::Terminate>();
     let cancelled = Arc::new(AtomicBool::new(false));
 
-    // Isolate runs on its own thread with a current-thread runtime.
-    //
-    // `tracing`'s notion of "the current span" is THREAD-LOCAL, so a span
-    // opened by the caller does not follow execution across this `spawn`.
-    // Every `ctx.log()` / `console.*` line is emitted from the isolate thread,
-    // so without a span entered *on that thread* they all fire with no current
-    // span — and the observability layer drops an event that has no span.
-    //
-    // **`isolate_span` is deliberately PARENTLESS, not a clone of the caller's.**
-    // A clone bumps the registry refcount and `on_close` fires only at zero, and
-    // this thread outlives `run` on two paths: `Cancelled`, and the grace-expiry
-    // branch that lets a detached thread unwind on its own. A clone would
-    // therefore pin the caller's invocation span open — exporting it late, or
-    // never if the thread parks in a host op forever, and inflating its
-    // `duration_ns` (measured at close) to the leaked thread's whole lifetime.
-    // The invocations that time out are exactly the ones worth having.
-    //
-    // The cost is that logs land on a sibling span rather than a child: they
-    // are correlated by the `invocation_id` field both spans carry, not by the
-    // trace tree. That is the right trade — a late-but-correct sibling beats a
-    // parent whose duration is a lie.
-    // Sentry hubs are per thread: carry this invocation's hub onto the isolate
-    // thread, so a custom-app surface tag (`middlewares::sentry_surface`) still
-    // covers what is captured there, panics included.
-    let sentry_hub = sentry::Hub::current();
-    let thread = std::thread::Builder::new()
-        .name("oxy-function".into())
-        .spawn({
-            let cancelled = cancelled.clone();
-            let meters = meters.clone();
-            move || {
-                // Counted from inside the closure, so a thread that failed to
-                // spawn is never counted as live. The guard covers every exit
-                // path below — the early `return` when the runtime fails to
-                // build, a panic in tenant code, and the normal end — because a
-                // missed decrement drifts this gauge upward forever.
-                let _isolate_guard = oxy_telemetry::metrics::sources::IsolateGuard::enter();
-                sentry::Hub::run(sentry_hub, || {
-                    // Sync closure, so holding the guard for the whole thread body
-                    // is correct (the "never hold across an await" rule is about
-                    // async fns; everything below runs inside `block_on`).
-                    let _span_guard = isolate_span.enter();
-                    let rt = match tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                    {
-                        Ok(rt) => rt,
-                        Err(e) => {
-                            let _ = done_tx.send(Err(RuntimeError::Internal(format!(
-                                "failed to build isolate runtime: {e}"
-                            ))));
-                            return;
-                        }
-                    };
-                    let local = tokio::task::LocalSet::new();
-                    local.block_on(&rt, async move {
-                        let run = IsolateRun {
-                            artifact_js,
-                            ctx,
-                            req,
-                            call_tx,
-                            cancelled,
-                            logs,
-                            meters,
-                        };
-                        let result = execute_isolate::<ActiveEngine>(run, handle_tx).await;
-                        let _ = done_tx.send(result);
-                    });
-                })
-            }
-        });
-    if let Err(e) = thread {
-        return Err(RuntimeError::Internal(format!(
-            "failed to spawn isolate thread: {e}"
-        )));
-    }
+    // Sentry hubs are per thread: the job carries this invocation's hub onto
+    // the isolate thread (see `spawn_cold`). The thread comes from the warm
+    // pool when one is ready, and is built here otherwise.
+    warm_pool::start_isolate(
+        pool,
+        Job {
+            run: IsolateRun {
+                artifact_js,
+                ctx,
+                req,
+                call_tx,
+                cancelled: cancelled.clone(),
+                logs,
+                meters: meters.clone(),
+            },
+            handle_tx,
+            done_tx,
+            hub: sentry::Hub::current(),
+            span: isolate_span,
+        },
+    )?;
 
     // Grab the isolate handle so cancellation can terminate execution even
     // when the isolate is stuck in a compute-only loop (design doc §11.4).
@@ -856,6 +836,78 @@ pub async fn run(
     }
 }
 
+/// Build the isolate thread on the request path — the thread, its Tokio
+/// runtime and the isolate — and run `job` on it. What every invocation did
+/// before the warm pool, and what one still does when the pool has nothing
+/// ready or is off (`OXY_FUNCTION_WARM_ISOLATES=0`).
+fn spawn_cold(job: Job) -> std::io::Result<()> {
+    let Job {
+        run,
+        handle_tx,
+        done_tx,
+        hub: sentry_hub,
+        span: isolate_span,
+    } = job;
+    // Isolate runs on its own thread with a current-thread runtime.
+    //
+    // `tracing`'s notion of "the current span" is THREAD-LOCAL, so a span
+    // opened by the caller does not follow execution across this `spawn`.
+    // Every `ctx.log()` / `console.*` line is emitted from the isolate thread,
+    // so without a span entered *on that thread* they all fire with no current
+    // span — and the observability layer drops an event that has no span.
+    //
+    // **`isolate_span` is deliberately PARENTLESS, not a clone of the caller's.**
+    // A clone bumps the registry refcount and `on_close` fires only at zero, and
+    // this thread outlives `run` on two paths: `Cancelled`, and the grace-expiry
+    // branch that lets a detached thread unwind on its own. A clone would
+    // therefore pin the caller's invocation span open — exporting it late, or
+    // never if the thread parks in a host op forever, and inflating its
+    // `duration_ns` (measured at close) to the leaked thread's whole lifetime.
+    // The invocations that time out are exactly the ones worth having.
+    //
+    // The cost is that logs land on a sibling span rather than a child: they
+    // are correlated by the `invocation_id` field both spans carry, not by the
+    // trace tree. That is the right trade — a late-but-correct sibling beats a
+    // parent whose duration is a lie.
+    // Sentry hubs are per thread: carry this invocation's hub onto the isolate
+    // thread, so a custom-app surface tag (`middlewares::sentry_surface`) still
+    // covers what is captured there, panics included.
+    std::thread::Builder::new()
+        .name("oxy-function".into())
+        .spawn(move || {
+            // Counted from inside the closure, so a thread that failed to
+            // spawn is never counted as live. The guard covers every exit
+            // path below — the early `return` when the runtime fails to
+            // build, a panic in tenant code, and the normal end — because a
+            // missed decrement drifts this gauge upward forever.
+            let _isolate_guard = oxy_telemetry::metrics::sources::IsolateGuard::enter();
+            sentry::Hub::run(sentry_hub, || {
+                // Sync closure, so holding the guard for the whole thread body
+                // is correct (the "never hold across an await" rule is about
+                // async fns; everything below runs inside `block_on`).
+                let _span_guard = isolate_span.enter();
+                let rt = match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        let _ = done_tx.send(Err(RuntimeError::Internal(format!(
+                            "failed to build isolate runtime: {e}"
+                        ))));
+                        return;
+                    }
+                };
+                let local = tokio::task::LocalSet::new();
+                local.block_on(&rt, async move {
+                    let result = execute_isolate::<ActiveEngine>(run, handle_tx).await;
+                    let _ = done_tx.send(result);
+                });
+            })
+        })
+        .map(|_| ())
+}
+
 /// What one isolate needs from [`run`], moved onto the isolate thread.
 struct IsolateRun {
     artifact_js: String,
@@ -877,11 +929,21 @@ async fn execute_isolate<E: IsolateEngine>(
     run: IsolateRun,
     handle_tx: oneshot::Sender<E::Terminate>,
 ) -> Result<FnResponse, RuntimeError> {
-    let mut engine = E::create(IsolateConfig {
+    let engine = E::create(IsolateConfig {
         heap_limit: heap_limit_bytes(),
         bootstrap: BOOTSTRAP_JS,
     })
     .map_err(|e| RuntimeError::Internal(format!("bootstrap failed: {e}")))?;
+    execute_on_engine(engine, run, handle_tx).await
+}
+
+/// [`execute_isolate`] from the point an isolate exists — whether it was
+/// created just now or built ahead of demand by the warm pool.
+async fn execute_on_engine<E: IsolateEngine>(
+    mut engine: E,
+    run: IsolateRun,
+    handle_tx: oneshot::Sender<E::Terminate>,
+) -> Result<FnResponse, RuntimeError> {
     let oom = engine.oom_flag();
     let _ = handle_tx.send(engine.terminate_handle());
     let result = execute_isolate_inner(&mut engine, run).await;
