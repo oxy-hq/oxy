@@ -3,8 +3,8 @@
 //!
 //! Lives here (below `oxy-app`) because the compile-boundary readers
 //! ([`crate::preagg_context`]) must honour the pin; the publish-time and
-//! pin logic is in `oxy_custom_apps::staging_pin`, and `oxy_app::server::api::
-//! custom_apps_staging_pin` re-exports everything below.
+//! pin logic is in `oxy_custom_apps::staging_pin`. Callers in `oxy-app` and
+//! `oxy-api-custom-apps` import the functions below from here.
 
 use uuid::Uuid;
 

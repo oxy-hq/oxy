@@ -811,7 +811,7 @@ pub async fn workspace_middleware(
         // Inside it, the preview-request scope: whatever the handler runs holds
         // its writes (`previews::request_hold`), whatever route it came in on.
         Some(revision_id) => {
-            crate::server::api::custom_apps_staging_pin::with_staging_pin(
+            oxy_app_core::staging_pin_scope::with_staging_pin(
                 Some(revision_id),
                 crate::server::previews::request_hold::scope(serve),
             )

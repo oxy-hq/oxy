@@ -182,7 +182,7 @@ pub async fn replace_worker_apps(
             .filter(app_members::Column::AppId.is_in(to_remove))
             .exec(db)
             .await?;
-        crate::server::api::custom_apps_auth::invalidate_access_cache();
+        oxy_custom_apps::auth::invalidate_access_cache();
         rows
     };
     let mut apps: Vec<Uuid> = wanted_rows.iter().map(|a| a.id).collect();

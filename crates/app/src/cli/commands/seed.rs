@@ -314,7 +314,7 @@ async fn bind_org_admin_emails(conn: &sea_orm::DatabaseConnection) -> Result<(),
     // touches the serve boot that carries the same warning — so without this
     // call it would bind nobody and say nothing, which is the exact silent
     // failure the removal is supposed to announce.
-    crate::server::api::custom_apps_auth::warn_on_removed_legacy_admins_env();
+    oxy_custom_apps::auth::warn_on_removed_legacy_admins_env();
     let raw = std::env::var("OXY_GLOBAL_ADMINS").unwrap_or_default();
     let parsed: Vec<String> = raw
         .split(',')

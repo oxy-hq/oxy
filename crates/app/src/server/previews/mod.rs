@@ -18,7 +18,7 @@
 //!   carrying `x-oxy-preview-revision: <revision_id>`, from staff, naming a
 //!   ready staging (or main) revision of this workspace **at the commit a live
 //!   preview is at**, runs inside
-//!   `custom_apps_staging_pin::with_staging_pin`: every compile-boundary read
+//!   `oxy_app_core::staging_pin_scope::with_staging_pin`: every compile-boundary read
 //!   answers from that revision on whichever pod serves it, rollups are skipped,
 //!   data-app caches are partitioned, and it may read but not run or change
 //!   anything — refused by route ([`read_only`]) and, on the routes that do run

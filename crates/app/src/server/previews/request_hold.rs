@@ -29,7 +29,7 @@
 //! the connector holds is recorded where the console lists it, and the run is
 //! stamped with the app.
 //!
-//! Separate from the staging pin (`custom_apps_staging_pin`), which a
+//! Separate from the staging pin (`oxy_custom_apps::staging_pin`), which a
 //! custom-app draft build also runs under: that pin chooses what is READ, and
 //! says nothing about whether a write may go out.
 

@@ -13,7 +13,7 @@
 //! access the toggle existed to gate**. The guard here rejects that synthetic
 //! override (`WorkspaceGlobalOverride`), so an operator cannot unlock themselves.
 //!
-//! See [`crate::server::api::custom_apps_auth`] for how the lockdown is
+//! See [`oxy_custom_apps::auth`] for how the lockdown is
 //! consulted on the request path.
 
 use axum::Json;
@@ -27,10 +27,10 @@ use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilt
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::server::api::custom_apps_auth::invalidate_access_cache;
 use crate::server::api::middlewares::workspace_context::{
     EffectiveWorkspaceRole, WorkspaceGlobalOverride,
 };
+use oxy_custom_apps::auth::invalidate_access_cache;
 
 /// Status payload. `locked` is always present; the audit fields are only
 /// meaningful when `locked` is true. `can_manage` tells the UI whether THIS

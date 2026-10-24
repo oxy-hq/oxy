@@ -110,7 +110,7 @@ fn debug_build_falls_back_to_the_staff_roster() {
 fn the_pre_rename_spelling_is_not_a_rung() {
     // OXY_APP_ADMINS was removed from every reader. Nothing here consults
     // it, so a .env that still uses only the old name resolves to nothing
-    // — `custom_apps_auth::warn_on_removed_legacy_admins_env` is what tells
+    // — `oxy_custom_apps::auth::warn_on_removed_legacy_admins_env` is what tells
     // the operator, rather than a silent grant from a var we no longer read.
     assert_eq!(resolve_source(None, None, true), (None, None));
 }

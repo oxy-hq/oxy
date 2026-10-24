@@ -9,7 +9,7 @@
 //! With it, the request is pinned to the revision only when all three hold:
 //! the caller may preview (`WorkspacePreviewer`, staff); the revision is a
 //! ready `staging`/`main` revision of THIS workspace whose compiled config the
-//! runtime can load (`custom_apps_staging_pin::check_pinnable`); and a **live
+//! runtime can load (`oxy_custom_apps::staging_pin::check_pinnable`); and a **live
 //! preview** of this workspace is at the revision's commit
 //! (`store::previewed_at`). The last is what makes deleting a preview, or
 //! refreshing it past a commit, end that revision's life as a preview — even
@@ -109,12 +109,8 @@ async fn servable_pin(
     query_branch: Option<&str>,
 ) -> Option<PreviewPin> {
     let db = oxy::database::client::establish_connection().await.ok()?;
-    let rev = match crate::server::api::custom_apps_staging_pin::check_pinnable(
-        &db,
-        workspace_id,
-        revision_id,
-    )
-    .await
+    let rev = match oxy_custom_apps::staging_pin::check_pinnable(&db, workspace_id, revision_id)
+        .await
     {
         Ok(rev) => rev,
         Err(refusal) => {

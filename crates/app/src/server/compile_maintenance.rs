@@ -142,7 +142,7 @@ async fn reap_stuck_compiles(db: &DatabaseConnection, timeout_secs: u64) {
 /// here, and no request outlives the (days-long) retention window.
 ///
 /// **A revision any `app_builds` row pins is kept too** — the staging pin
-/// (`app_builds.semantic_revision_id`, see `custom_apps_staging_pin`). The
+/// (`app_builds.semantic_revision_id`, see `oxy_custom_apps::staging_pin`). The
 /// rule is "referenced by any build", not "by a draft pointer": it is the
 /// simpler one, and still bounded, because builds are themselves GC'd
 /// keep-last-N per app — the pin is released when its build is.

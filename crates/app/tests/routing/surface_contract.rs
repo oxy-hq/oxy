@@ -24,7 +24,9 @@
 //! `oxy-api-custom-apps` now, so their reach into `oxy-app` is an `oxy_app::` path,
 //! which the first test below holds to the prelude, and the second test keeps the
 //! vertical from growing back: `oxy-app` has no `custom_app*` module that is not a
-//! re-export of one that moved, except the two named in [`NOT_SHIMS`].
+//! re-export of one that moved, except the one named in [`NOT_SHIMS`]. The third test
+//! below is stricter: `crates/app/src` has no `custom_apps_*` file or directory at all
+//! except `custom_apps_gates.rs`.
 
 use std::path::{Path, PathBuf};
 
@@ -306,6 +308,68 @@ fn oxy_app_holds_no_custom_app_module_except_shims() {
             "NOT_SHIMS names `{path}`, which is gone — delete the entry"
         );
     }
+}
+
+/// Every file or directory name under `crates/app/src` that starts with
+/// `custom_apps_`, stripped of `.rs`, as a path relative to `src`.
+fn custom_apps_named_modules(app_src: &Path) -> Vec<String> {
+    let mut paths = Vec::new();
+    src_entries(app_src, &mut paths);
+    paths
+        .iter()
+        .filter_map(|p| {
+            let name = p.file_name()?.to_string_lossy();
+            let stem = name.strip_suffix(".rs").unwrap_or(&name);
+            stem.starts_with("custom_apps_").then(|| {
+                p.strip_prefix(app_src)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            })
+        })
+        .collect()
+}
+
+/// Files and directories both, so a `custom_apps_x/` directory is seen even
+/// when its `mod.rs` is the only file in it.
+fn src_entries(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        out.push(path.clone());
+        if path.is_dir() {
+            src_entries(&path, out);
+        }
+    }
+}
+
+#[test]
+fn oxy_app_has_no_custom_apps_module_except_gates() {
+    let app_src = crates_dir().join("app").join("src");
+    let found = custom_apps_named_modules(&app_src);
+    let offenders: Vec<&String> = found
+        .iter()
+        .filter(|rel| rel.as_str() != "server/api/custom_apps_gates.rs")
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "`crates/app/src` has a `custom_apps_*` module besides `custom_apps_gates`. \
+         The last re-export files were retired; import from the crate that owns the \
+         name (`oxy_custom_apps`, `oxy_app_core`) instead of adding one back:\n  {}",
+        offenders
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    );
+    assert!(
+        found
+            .iter()
+            .any(|rel| rel == "server/api/custom_apps_gates.rs"),
+        "the walk did not find `custom_apps_gates.rs` — it lost its way"
+    );
 }
 
 #[test]

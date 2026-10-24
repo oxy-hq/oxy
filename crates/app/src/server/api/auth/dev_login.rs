@@ -188,7 +188,7 @@ fn build_config(
 /// 2. `OXY_GLOBAL_ADMINS` — debug builds only. A dev box already lists its staff
 ///    there, and a second identical list is one that goes stale. The pre-rename
 ///    `OXY_APP_ADMINS` is **not** a third rung: it is no longer read anywhere,
-///    and `custom_apps_auth` says so at startup if it is still set.
+///    and `oxy_custom_apps::auth` says so at startup if it is still set.
 ///
 /// `debug_build` is a parameter rather than a `cfg!` read inline so the release
 /// behavior is testable from a debug test run — the case that matters most here

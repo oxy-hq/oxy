@@ -43,12 +43,10 @@ use oxy_custom_apps::staging_held::{HeldActor, HeldRow, record_held};
 use oxy_custom_apps::thread_source::{PRODUCTION_THREAD_SOURCE, staging_thread_source};
 use oxy_custom_apps::write_record::{WriteRecord, plane_for_dialect};
 
-use crate::server::api::custom_apps_staging_pin::request::{
-    AppRef, staging_app_for, staging_app_ref,
-};
 use crate::server::previews::request_hold::{HeldSink, HeldStatement, HoldScope};
 use crate::server::previews::sql_kind::StatementKind;
 use oxy_app_core::custom_app_env_request::environment_refused;
+use oxy_custom_apps::staging_pin::request::{AppRef, staging_app_for, staging_app_ref};
 
 /// The surface an ask's held rows are listed under, and their `mode`.
 pub const ASK_SURFACE: &str = "agent";
@@ -94,7 +92,7 @@ pub fn staging_run_matches(hold: &HoldScope, metadata: Option<&serde_json::Value
     stamped.is_some() && stamped == hold.app_id()
 }
 
-/// The app a staging write names (`custom_apps_staging_pin::request::
+/// The app a staging write names (`oxy_custom_apps::staging_pin::request::
 /// staging_app_ref`). Shared with `projects::automation_run::staging_hold`.
 pub(crate) fn ask_app_ref(headers: &HeaderMap) -> Option<AppRef> {
     staging_app_ref(headers)
@@ -135,7 +133,7 @@ async fn staging_hold(
     Some(HoldScope::staging(app.id, sink))
 }
 
-/// `404 EnvironmentRefused` (`custom_apps_staging_pin::request::
+/// `404 EnvironmentRefused` (`oxy_custom_apps::staging_pin::request::
 /// environment_refused`). Shared with `projects::automation_run::staging_hold`.
 pub(crate) fn refused(environment: &AppEnvironment, what: &str) -> Response {
     environment_refused(environment, what)

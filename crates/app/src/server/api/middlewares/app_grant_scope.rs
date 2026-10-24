@@ -25,7 +25,7 @@
 //! is known, so it admits the header by shape — a sandbox's name, or
 //! `staging` — and whether **this** token was granted that app's staging is
 //! decided once it is: the credential's own grant, then oxy-authz
-//! (`custom_apps_agent::holds_staging`, `custom_apps_functions::agent_gate`).
+//! (`oxy_custom_apps::agent::holds_staging`, `custom_apps_functions::agent_gate`).
 //! A token minted without staging is answered the same `404`, by that gate.
 //!
 //! `/logs` is on the public router, where no fence is mounted: it admits the

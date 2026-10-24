@@ -13,7 +13,7 @@ use oxy::config::{ArtifactError, ContextDocuments};
 use uuid::Uuid;
 
 use super::OxyProjectContext;
-use crate::server::api::custom_apps_staging_pin::current_staging_pin;
+use oxy_app_core::staging_pin_scope::current_staging_pin;
 
 impl OxyProjectContext {
     /// Always `Ok(Some(_))` unless the read failed: this host answers on every

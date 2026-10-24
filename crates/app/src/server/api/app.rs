@@ -715,7 +715,7 @@ fn get_result_cache_filename(app_path: &PathBuf) -> String {
     use xxhash_rust::xxh3::xxh3_64;
     // A staging pin (a workspace preview) gets its own cache file: the same app
     // rendered against a branch's model must never answer a live reader.
-    let partition = crate::server::api::custom_apps_staging_pin::cache_partition();
+    let partition = oxy_app_core::staging_pin_scope::cache_partition();
     let key = format!("{}{partition}", app_path.to_string_lossy());
     let hash = xxh3_64(key.as_bytes());
     format!("{hash:x}.app.result.yml")
@@ -1244,17 +1244,17 @@ mod preview_cache_tests {
         );
         assert_eq!(live, legacy, "unpinned keys do not move");
 
-        let pinned = crate::server::api::custom_apps_staging_pin::with_staging_pin(
-            Some(uuid::Uuid::new_v4()),
-            async { get_result_cache_filename(&path) },
-        )
-        .await;
+        let pinned =
+            oxy_app_core::staging_pin_scope::with_staging_pin(Some(uuid::Uuid::new_v4()), async {
+                get_result_cache_filename(&path)
+            })
+            .await;
         assert_ne!(pinned, live);
-        let other = crate::server::api::custom_apps_staging_pin::with_staging_pin(
-            Some(uuid::Uuid::new_v4()),
-            async { get_result_cache_filename(&path) },
-        )
-        .await;
+        let other =
+            oxy_app_core::staging_pin_scope::with_staging_pin(Some(uuid::Uuid::new_v4()), async {
+                get_result_cache_filename(&path)
+            })
+            .await;
         assert_ne!(pinned, other, "two previews do not share one either");
     }
 }

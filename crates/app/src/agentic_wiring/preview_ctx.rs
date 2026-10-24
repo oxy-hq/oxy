@@ -11,7 +11,7 @@
 //!   exists ([`NO_WORKING_COPY`]), so every "not compiled here → read the
 //!   working copy" fallback in the manager finds nothing rather than reading
 //!   someone's checkout. `workspace_path()` is `None` and every resolver runs
-//!   under the staging pin (`custom_apps_staging_pin::with_staging_pin`: no
+//!   under the staging pin (`oxy_app_core::staging_pin_scope::with_staging_pin`: no
 //!   rollups, partitioned caches).
 //! * **Names are preview-scoped** (D5). The automation YAML it serves is
 //!   re-emitted with each side-effecting name as `preview:<run_id>:<name>`
@@ -201,7 +201,7 @@ impl PreviewPlatformContext {
         &self,
         fut: F,
     ) -> impl std::future::Future<Output = F::Output> {
-        crate::server::api::custom_apps_staging_pin::with_staging_pin(
+        oxy_app_core::staging_pin_scope::with_staging_pin(
             Some(self.scope.revision_id),
             Box::pin(fut),
         )

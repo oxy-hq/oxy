@@ -797,7 +797,7 @@ async fn insert_membership(
 
     tx.commit().await.map_err(internal_resp)?;
     // A role that can make the caller an app admin changed: drop the no-role memo.
-    crate::server::api::custom_apps_auth::invalidate_access_cache();
+    oxy_custom_apps::auth::invalidate_access_cache();
     Ok(StatusCode::CREATED)
 }
 
@@ -888,7 +888,7 @@ pub async fn update_role(
 
     tx.commit().await.map_err(internal_resp)?;
     // A role that can make the caller an app admin changed: drop the no-role memo.
-    crate::server::api::custom_apps_auth::invalidate_access_cache();
+    oxy_custom_apps::auth::invalidate_access_cache();
     tracing::info!(
         admin_email = %actor.label(),
         target_id = %user_id,

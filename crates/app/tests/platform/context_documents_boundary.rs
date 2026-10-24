@@ -180,7 +180,7 @@ async fn an_older_revision_on_a_pod_with_no_files_runs_without_documents_and_que
 /// compiling `main` would not change what that request reads.
 #[tokio::test]
 async fn an_older_pinned_staging_revision_runs_without_documents_and_queues_nothing() {
-    use oxy_app::server::api::custom_apps_staging_pin::with_staging_pin;
+    use oxy_app_core::staging_pin_scope::with_staging_pin;
 
     let db = setup_db(Schema::All).await;
     let files = working_copy();

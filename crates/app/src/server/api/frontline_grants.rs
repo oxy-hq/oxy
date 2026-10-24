@@ -132,7 +132,7 @@ pub async fn grant_apps_to_worker(
         .await?;
     // The `(user, app)` access verdict is cached per replica for a minute; a
     // worker granted just now must not wait it out at the kiosk.
-    crate::server::api::custom_apps_auth::invalidate_access_cache();
+    oxy_custom_apps::auth::invalidate_access_cache();
     Ok(granted)
 }
 

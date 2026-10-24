@@ -321,8 +321,8 @@ async fn the_directory_names_whoever_can_reach_this_app() {
 /// enrolled to use.
 #[tokio::test]
 async fn the_model_and_both_gates_agree_about_a_worker() {
-    use oxy_app::server::api::custom_apps_auth::user_can_access_app;
     use oxy_app::server::authz::{Action, Resource, allows, enforce, loader};
+    use oxy_custom_apps::auth::user_can_access_app;
 
     let (db, _url) = fresh_db(Schema::Central).await;
     let fx = seed(&db).await;
@@ -450,9 +450,9 @@ async fn the_model_and_both_gates_agree_about_a_worker() {
     );
     // The app-keyed gate hits the same branch its public counterpart does:
     // `user_can_access_app` refuses a draft to every customer, workers included.
-    // (`custom_apps_auth` caches a verdict per (user, app) for 60s, so the
+    // (`oxy_custom_apps::auth` caches a verdict per (user, app) for 60s, so the
     // cache is cleared first — this is a fresh database but one process.)
-    oxy_app::server::api::custom_apps_auth::invalidate_access_cache();
+    oxy_custom_apps::auth::invalidate_access_cache();
     let draft = apps::Entity::find_by_id(fx.app_a)
         .one(&db)
         .await

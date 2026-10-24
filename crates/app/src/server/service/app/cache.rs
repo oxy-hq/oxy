@@ -191,7 +191,7 @@ impl<S: DiskSlot> AppCache<S> {
         // Partitioned under a staging pin (a workspace preview): the same tasks
         // can answer differently against a branch's semantic model, and this
         // file is shared by every reader of the app.
-        let partition = crate::server::api::custom_apps_staging_pin::cache_partition();
+        let partition = oxy_app_core::staging_pin_scope::cache_partition();
         let tasks_hash = if partition.is_empty() {
             tasks_hash
         } else {

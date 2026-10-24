@@ -385,7 +385,7 @@ async fn seed_app_admins_from_env() -> Result<(), OxyError> {
     let db = establish_connection()
         .await
         .map_err(|e| OxyError::RuntimeError(format!("Failed to connect to database: {}", e)))?;
-    crate::server::api::custom_apps_auth::bootstrap_app_admins_from_env(&db)
+    oxy_custom_apps::auth::bootstrap_app_admins_from_env(&db)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("app admin seed failed: {}", e)))?;
     Ok(())

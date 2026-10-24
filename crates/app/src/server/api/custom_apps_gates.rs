@@ -214,7 +214,7 @@ pub async fn build_caller_context(
     project_id: Uuid,
     staging_pin: Option<Uuid>,
 ) -> Result<OxyProjectContext, Response> {
-    crate::server::api::custom_apps_staging_pin::with_staging_pin(
+    oxy_app_core::staging_pin_scope::with_staging_pin(
         staging_pin,
         build_project_context(workspace, user_id, project_id),
     )

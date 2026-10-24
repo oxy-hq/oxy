@@ -12,15 +12,13 @@ pub mod chart;
 pub mod competitors;
 pub mod compile;
 pub mod compile_staging;
-pub use oxy_app_core::compiled_reader;
-pub mod custom_apps_agent;
 /// Moved to `oxy-app-core`; the old path stays so no call site changes.
 pub use oxy_app_core::agent_body as custom_apps_agent_body;
 #[cfg(test)]
 pub(crate) use oxy_app_core::agent_fixture as custom_apps_agent_fixture;
+pub use oxy_app_core::compiled_reader;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::asset_manifest as custom_apps_asset_manifest;
-pub mod custom_apps_auth;
 pub use oxy_custom_apps::build_state as custom_apps_build_state;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::build_store as custom_apps_build_store;
@@ -42,7 +40,6 @@ pub use oxy_custom_apps::publish_authz as custom_apps_publish_authz;
 pub use oxy_custom_apps::sandbox_instance as custom_apps_sandbox_instance;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::source as custom_apps_source;
-pub mod custom_apps_staging_pin;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
 pub use oxy_custom_apps::storage as custom_apps_storage;
 /// Moved to the `oxy-custom-apps` domain crate; the old path stays so no call site changes.
