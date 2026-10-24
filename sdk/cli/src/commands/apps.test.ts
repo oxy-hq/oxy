@@ -503,6 +503,75 @@ describe("resolving <org>/<app>", () => {
   });
 });
 
+/**
+ * The list rows carry `availability` (the per-app answer, minus identity). The
+ * commands print rows as the server sent them, so the field must reach `--json`
+ * and no other field may go missing.
+ */
+describe("a list row's availability", () => {
+  const READING = {
+    verdict: "burning",
+    severity: "page",
+    burn_rate: 50,
+    long_window_minutes: 60,
+    short_window_minutes: 5,
+    objective: 0.99,
+    windows: [{ window_minutes: 5, total: 30, failed: 15, failure_ratio: 0.5 }],
+    open_builds: {
+      status: "all_live",
+      live_sessions: 3,
+      older_sessions: 0,
+      older_builds: 0,
+      window_minutes: 1440
+    }
+  };
+  const MEASURED = { ...LIVE, availability: READING };
+  const pages = (): Routes => ({
+    [`${LIST}?limit=100&offset=0`]: () => ({
+      status: 200,
+      body: { items: [MEASURED, DRAFT], next_offset: null }
+    })
+  });
+
+  it("list --json passes the field through and loses nothing", async () => {
+    stubFetch(pages(), calls);
+    const io = capture();
+
+    await runAppsList(fakeContext(), { json: true });
+
+    const rows = JSON.parse(io.stdout()) as Array<Record<string, unknown>>;
+    // Whole-row equality: every field the server sent is still there, byte for byte.
+    expect(rows.find((row) => row.id === ID_A)).toEqual(MEASURED);
+    // A draft has no reading, and the row does not invent one.
+    expect(rows.find((row) => row.id === ID_B)).toEqual(DRAFT);
+  });
+
+  it("show --json carries it on `app` and still reads the standalone endpoint", async () => {
+    stubFetch(
+      {
+        ...pages(),
+        [`${LIST}/${ID_A}/builds`]: () => ({
+          status: 200,
+          body: { builds: [], promoted_at: null, promoted_by_email: null }
+        }),
+        [`${LIST}/acme/store/health`]: () => ({ status: 200, body: HEALTH_PASS }),
+        [`${LIST}/acme/store/availability`]: () => ({ status: 200, body: AVAILABILITY }),
+        [`${LIST}/${ID_A}/activity/summary`]: () => ({ status: 200, body: USAGE })
+      },
+      calls
+    );
+    const io = capture();
+
+    await runAppsShow(fakeContext(), "acme/store", true);
+
+    const doc = JSON.parse(io.stdout());
+    expect(doc.app).toEqual(MEASURED);
+    // The standalone endpoint stays for one release: `show` still reads it.
+    expect(calls).toContain(`GET ${LIST}/acme/store/availability`);
+    expect(doc.availability.verdict).toBe("healthy");
+  });
+});
+
 describe("apps show", () => {
   function showRoutes(over: Routes = {}): Routes {
     return {

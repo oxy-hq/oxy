@@ -211,6 +211,17 @@ pub struct AppResponse {
     /// responses, which a consumer reads as "not asked", never as healthy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict: Option<super::verdict::ListVerdict>,
+    /// The app's availability reading — the same object `GET
+    /// /customer-apps/{org}/{app}/availability` answers with (minus the app's
+    /// identity, which this row already carries), built by the same function
+    /// (see [`super::list_availability`]). Additive.
+    ///
+    /// Present only for a published app the evaluator measured. Absent means
+    /// "not read here" — a draft, capture off, or the store did not answer — and
+    /// a consumer asks the per-app endpoint or says nothing; it is never
+    /// `healthy`. `no_opinion` inside it is a measured "not enough traffic".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub availability: Option<crate::custom_apps_availability::AvailabilityReading>,
 }
 
 impl AppResponse {
@@ -256,6 +267,7 @@ impl AppResponse {
             source_unrecorded: false,
             live_published_via: None,
             verdict: None,
+            availability: None,
         }
     }
 }
@@ -311,6 +323,12 @@ pub struct ListAppsQuery {
     pub limit: u64,
     #[serde(default)]
     pub offset: u64,
+    /// Only this app: the console's refresh of the one row it shows, which
+    /// carries the app's current `verdict` and `availability` without walking the
+    /// registry. The caller's org scope still applies, so an app outside it is
+    /// absent, not denied.
+    #[serde(default)]
+    pub id: Option<Uuid>,
 }
 
 /// Page size for the admin app list. Tuned for "recently active is

@@ -1,5 +1,5 @@
 import type { AdminStatusTone } from "@/pages/admin/components/AdminStatusPill";
-import type { AppAvailability } from "@/types/apps";
+import type { AppAvailabilityReading } from "@/types/apps";
 
 /**
  * Verdict → status-pill tone, mapped onto the existing admin enumeration rather
@@ -12,7 +12,7 @@ import type { AppAvailability } from "@/types/apps";
  * does — the same split `custom_apps::status_for` makes on the backend when it
  * maps them onto Unhealthy vs Degraded.
  */
-export function availabilityTone(data: AppAvailability): AdminStatusTone {
+export function availabilityTone(data: AppAvailabilityReading): AdminStatusTone {
   switch (data.verdict) {
     case "healthy":
       return "ok";
@@ -24,7 +24,7 @@ export function availabilityTone(data: AppAvailability): AdminStatusTone {
 }
 
 /** Short label for the pill. */
-export function availabilityLabel(data: AppAvailability): string {
+export function availabilityLabel(data: AppAvailabilityReading): string {
   switch (data.verdict) {
     case "healthy":
       return "serving";

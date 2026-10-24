@@ -9,7 +9,13 @@ import type { AppBuild, AppBuildHistory, CustomApp } from "@/types/apps";
  *  `CustomApp`; the dossier window holds the detail response. Both satisfy this. */
 export type LifecycleAppRef = Pick<
   CustomApp,
-  "id" | "org_slug" | "slug" | "published_at" | "last_promoted_at" | "last_promoted_by_email"
+  | "id"
+  | "org_slug"
+  | "slug"
+  | "published_at"
+  | "last_promoted_at"
+  | "last_promoted_by_email"
+  | "availability"
 >;
 
 export interface AppLifecycle {

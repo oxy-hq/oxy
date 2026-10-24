@@ -70,6 +70,13 @@ export interface CustomApp {
   /** The server's verdict (see [`AppVerdict`]). List responses only. */
   verdict?: AppVerdict;
   /**
+   * The app's availability reading, as `GET …/availability` answers it, so the console
+   * does not ask once per app. List responses only, and only for a published app the
+   * server measured. Absent means "not read here" (a draft, capture off, a store that
+   * did not answer) — ask the per-app endpoint or say nothing; never read it as healthy.
+   */
+  availability?: AppAvailabilityReading;
+  /**
    * Set when an Oxy engineer publishes the app via the admin UI. Null
    * = draft (only Oxy staff with workspace oxy-access can reach it).
    * Once set, the app appears in the customer's workspace sidebar.
@@ -578,10 +585,15 @@ export interface AvailabilityWindow {
  */
 type AvailabilityVerdict = "no_opinion" | "healthy" | "burning";
 
-export interface AppAvailability {
+export interface AppAvailability extends AppAvailabilityReading {
   app_id: string;
   org_slug: string;
   app_slug: string;
+}
+
+/** What the availability answer says about an app, apart from which app it is. The
+ *  standalone endpoint adds the identity; a list row already carries it. */
+export interface AppAvailabilityReading {
   verdict: AvailabilityVerdict;
   /** Present only when `verdict` is `burning`. */
   severity?: "page" | "ticket";

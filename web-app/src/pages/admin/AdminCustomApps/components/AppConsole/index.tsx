@@ -132,7 +132,7 @@ export const AppConsole = ({ app }: { app: CustomApp }) => {
               question='Q1 — is it broken'
             >
               <div className='flex flex-col gap-3'>
-                <Availability orgSlug={app.org_slug} appSlug={app.slug} />
+                <Availability app={app} />
                 <Activity appId={app.id} />
               </div>
             </ConsolePanel>

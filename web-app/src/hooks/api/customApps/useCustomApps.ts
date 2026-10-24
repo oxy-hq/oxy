@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CustomAppsService } from "@/services/api/customApps";
+import type { AppAvailabilityReading } from "@/types/apps";
 import { errMessage } from "../errMessage";
 import queryKeys from "../queryKey";
 
@@ -106,6 +107,47 @@ export const useAdminApp = (id: string | undefined) =>
     queryFn: () => CustomAppsService.get(id as string),
     enabled: !!id
   });
+
+/** How often the console re-reads the one registry row it shows. */
+const ROW_REFRESH_MS = 60_000;
+
+/**
+ * One registry row, read on its own (`GET /customer-apps?id=`) and polled.
+ *
+ * The row carries the app's `verdict` and `availability`; the registry walk that first
+ * supplies it is not polled, and re-walking every page to refresh one app would cost the
+ * whole fleet's evaluation each tick. This is the same list, narrowed to the app on screen —
+ * the server keeps what it computed for 30 s, so the tick right after a registry read is
+ * a cache hit.
+ *
+ * `retry: false` and a null for a row the caller cannot see: the caller keeps the row it
+ * already holds rather than blanking the panel.
+ */
+export const useAdminAppRow = (id: string | undefined) =>
+  useQuery({
+    queryKey: queryKeys.customApps.row(id ?? ""),
+    queryFn: async () => (await CustomAppsService.list({ id, limit: 1 })).items[0] ?? null,
+    enabled: !!id,
+    refetchInterval: ROW_REFRESH_MS,
+    retry: false
+  });
+
+/**
+ * The availability reading the console shows for an app, from its registry row — kept live
+ * by re-reading that one row, never by asking `GET …/availability` per app.
+ *
+ * `undefined` when the row carries none (a detail response, a draft, capture off, a store
+ * that did not answer): the caller then asks the per-app endpoint, which also says why.
+ * Only a row that carries a reading is polled; a polled answer replaces the registry's,
+ * including by carrying none.
+ */
+export function useListedAvailability(app: {
+  id: string;
+  availability?: AppAvailabilityReading;
+}): AppAvailabilityReading | undefined {
+  const row = useAdminAppRow(app.availability ? app.id : undefined);
+  return row.data ? row.data.availability : app.availability;
+}
 
 /**
  * Diagnostic snapshot. Only fires when both slugs are present so the

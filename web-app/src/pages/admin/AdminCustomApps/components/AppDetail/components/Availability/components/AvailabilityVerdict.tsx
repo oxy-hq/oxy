@@ -1,5 +1,5 @@
 import { AdminStatusPill } from "@/pages/admin/components/AdminStatusPill";
-import type { AppAvailability } from "@/types/apps";
+import type { AppAvailabilityReading } from "@/types/apps";
 import {
   availabilityLabel,
   availabilityTone,
@@ -8,7 +8,7 @@ import {
 } from "../availabilityTone";
 
 /** One sentence saying what the verdict means and what follows from it. */
-function explain(data: AppAvailability): string {
+function explain(data: AppAvailabilityReading): string {
   const objective = formatObjective(data.objective);
   if (data.verdict === "no_opinion") {
     return "Not enough traffic to judge. Deliberately not reported as healthy — an app nobody has used has not been shown to work.";
@@ -30,7 +30,7 @@ function explain(data: AppAvailability): string {
   return `${parts.join(" · ")}. ${consequence}`;
 }
 
-export const AvailabilityVerdict = ({ data }: { data: AppAvailability }) => (
+export const AvailabilityVerdict = ({ data }: { data: AppAvailabilityReading }) => (
   <div
     className='flex items-start gap-2 rounded-md border bg-muted/40 p-3'
     data-testid='admin-app-availability-verdict'

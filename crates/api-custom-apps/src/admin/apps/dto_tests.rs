@@ -111,3 +111,14 @@ fn none_when_oxy_api_url_is_unset() {
         assert_eq!(staging_url_for(ORG, APP, &builds), None);
     });
 }
+
+/// `?id=` narrows the list to one app; without it the list is unchanged.
+#[test]
+fn the_list_query_takes_an_optional_app_id() {
+    use super::ListAppsQuery;
+    let id = Uuid::new_v4();
+    let one: ListAppsQuery = serde_json::from_value(serde_json::json!({ "id": id })).unwrap();
+    assert_eq!(one.id, Some(id));
+    let all: ListAppsQuery = serde_json::from_value(serde_json::json!({})).unwrap();
+    assert_eq!((all.id, all.limit, all.offset), (None, 50, 0));
+}

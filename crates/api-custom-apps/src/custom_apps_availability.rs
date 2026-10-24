@@ -32,11 +32,13 @@ use axum::extract::Path;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use oxy_observability::burn_rate::{ALERT_WINDOWS_MINUTES, BurnVerdict, SloConfig, evaluate};
+use oxy_observability::types::AppAvailabilityWindow;
 use serde::Serialize;
+use uuid::Uuid;
 
 use super::custom_apps_auth::authenticate_and_authorize;
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct WindowReport {
     pub window_minutes: u32,
     pub total: u64,
@@ -47,11 +49,14 @@ pub struct WindowReport {
     pub failure_ratio: Option<f64>,
 }
 
-#[derive(Serialize)]
-pub struct AvailabilityResponse {
-    pub app_id: String,
-    pub org_slug: String,
-    pub app_slug: String,
+/// Everything the availability answer says about one app **except who the app
+/// is**. It is the body of `GET …/availability` and, unchanged, the
+/// `availability` field on the `/customer-apps` list rows
+/// ([`crate::admin::apps::list_availability`]) — one type built by one function
+/// ([`AvailabilityReading::from_windows`]), so the two cannot word a verdict
+/// differently.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct AvailabilityReading {
     /// `no_opinion` | `healthy` | `burning`.
     pub verdict: &'static str,
     /// `page` | `ticket`, present only when `verdict` is `burning`.
@@ -68,6 +73,67 @@ pub struct AvailabilityResponse {
     /// Recent sessions on the live build vs older builds — whether open tabs
     /// have picked up the last publish. See `custom_apps_open_builds`.
     pub open_builds: super::custom_apps_open_builds::OpenBuilds,
+}
+
+impl AvailabilityReading {
+    /// The verdict and the numbers behind it, from one app's windows (in
+    /// [`ALERT_WINDOWS_MINUTES`] order). Empty or quiet windows are
+    /// `no_opinion`, never `healthy`.
+    pub fn from_windows(
+        windows: &[AppAvailabilityWindow],
+        open_builds: super::custom_apps_open_builds::OpenBuilds,
+    ) -> Self {
+        let cfg = SloConfig::default();
+        let mut reading = Self {
+            verdict: "no_opinion",
+            severity: None,
+            burn_rate: None,
+            long_window_minutes: None,
+            short_window_minutes: None,
+            objective: cfg.objective,
+            windows: windows
+                .iter()
+                .map(|w| WindowReport {
+                    window_minutes: w.window_minutes,
+                    total: w.total,
+                    failed: w.failed,
+                    failure_ratio: w.failure_ratio(),
+                })
+                .collect(),
+            open_builds,
+        };
+        match evaluate(windows, &cfg) {
+            BurnVerdict::NoOpinion => {}
+            BurnVerdict::Healthy => reading.verdict = "healthy",
+            BurnVerdict::Burning {
+                severity,
+                burn_rate,
+                long_minutes,
+                short_minutes,
+                ..
+            } => {
+                reading.verdict = "burning";
+                reading.severity = Some(match severity {
+                    oxy_observability::burn_rate::Severity::Page => "page",
+                    oxy_observability::burn_rate::Severity::Ticket => "ticket",
+                });
+                reading.burn_rate = Some(burn_rate);
+                reading.long_window_minutes = Some(long_minutes);
+                reading.short_window_minutes = Some(short_minutes);
+            }
+        }
+        reading
+    }
+}
+
+#[derive(Serialize)]
+pub struct AvailabilityResponse {
+    pub app_id: String,
+    pub org_slug: String,
+    pub app_slug: String,
+    /// Flattened, so the wire shape is the one this endpoint has always had.
+    #[serde(flatten)]
+    pub reading: AvailabilityReading,
 }
 
 fn error_response(status: StatusCode, message: &str) -> Response {
@@ -106,80 +172,66 @@ pub async fn get_availability(
         );
     };
 
-    let windows = match store
-        .get_app_availability(
-            &outcome.app.org_id.to_string(),
-            &outcome.app.id.to_string(),
-            ALERT_WINDOWS_MINUTES,
-        )
-        .await
+    let reading = match read_availability(
+        store.as_ref(),
+        outcome.app.org_id,
+        outcome.app.id,
+        outcome.environments.production,
+    )
+    .await
     {
-        Ok(w) => w,
+        Ok(r) => r,
         Err(e) => {
             tracing::warn!("availability query failed for app {}: {e}", outcome.app.id);
             return error_response(StatusCode::BAD_GATEWAY, "availability query failed");
         }
     };
 
-    let cfg = SloConfig::default();
-    let verdict = evaluate(&windows, &cfg);
-    let reports = windows
-        .iter()
-        .map(|w| WindowReport {
-            window_minutes: w.window_minutes,
-            total: w.total,
-            failed: w.failed,
-            failure_ratio: w.failure_ratio(),
-        })
-        .collect();
-
-    let mut response = AvailabilityResponse {
+    let response = AvailabilityResponse {
         app_id: outcome.app.id.to_string(),
         org_slug,
         app_slug,
-        verdict: "no_opinion",
-        severity: None,
-        burn_rate: None,
-        long_window_minutes: None,
-        short_window_minutes: None,
-        objective: cfg.objective,
-        windows: reports,
-        open_builds: open_builds_for(&outcome.app, outcome.environments.production).await,
+        reading,
     };
-    match verdict {
-        BurnVerdict::NoOpinion => {}
-        BurnVerdict::Healthy => response.verdict = "healthy",
-        BurnVerdict::Burning {
-            severity,
-            burn_rate,
-            long_minutes,
-            short_minutes,
-            ..
-        } => {
-            response.verdict = "burning";
-            response.severity = Some(match severity {
-                oxy_observability::burn_rate::Severity::Page => "page",
-                oxy_observability::burn_rate::Severity::Ticket => "ticket",
-            });
-            response.burn_rate = Some(burn_rate);
-            response.long_window_minutes = Some(long_minutes);
-            response.short_window_minutes = Some(short_minutes);
-        }
-    }
-
     (StatusCode::OK, Json(response)).into_response()
+}
+
+/// One app's availability from the store: a read per window
+/// ([`ALERT_WINDOWS_MINUTES`]) plus the open-builds read, then
+/// [`AvailabilityReading::from_windows`]. `live` is the build production serves.
+///
+/// What an uncached standalone request costs, and why the list does not call it
+/// per app: seven ClickHouse round trips for one app.
+pub(crate) async fn read_availability(
+    store: &dyn oxy_observability::store::ObservabilityStore,
+    org_id: Uuid,
+    app_id: Uuid,
+    live: Option<Uuid>,
+) -> Result<AvailabilityReading, oxy_shared::errors::OxyError> {
+    let windows = store
+        .get_app_availability(
+            &org_id.to_string(),
+            &app_id.to_string(),
+            ALERT_WINDOWS_MINUTES,
+        )
+        .await?;
+    Ok(AvailabilityReading::from_windows(
+        &windows,
+        open_builds_for(org_id, app_id, live).await,
+    ))
 }
 
 /// One app's open-builds line, compared against `live` — the build production
 /// serves, from the `app_environments` row the gate already read.
 async fn open_builds_for(
-    app: &entity::apps::Model,
-    live: Option<uuid::Uuid>,
+    org_id: Uuid,
+    app_id: Uuid,
+    live: Option<Uuid>,
 ) -> super::custom_apps_open_builds::OpenBuilds {
     use super::custom_apps_open_builds as open_builds;
-    open_builds::for_apps(&[(app.org_id, app.id, live)])
+    open_builds::for_apps(&[(org_id, app_id, live)])
         .await
-        .remove(&app.id)
+        .remove(&app_id)
         .unwrap_or_else(open_builds::OpenBuilds::not_measured)
 }
 
@@ -216,5 +268,55 @@ mod tests {
         };
         let json = serde_json::to_value(&report).unwrap();
         assert!(json["failure_ratio"].is_null(), "{json}");
+    }
+
+    /// The standalone body keeps the shape it had before the reading was
+    /// split out of it: identity first, then the reading's fields flat, with
+    /// the burn fields present only when burning.
+    #[test]
+    fn the_standalone_body_keeps_its_wire_shape() {
+        use crate::custom_apps_open_builds::OpenBuilds;
+        let body = |windows: &[AppAvailabilityWindow]| {
+            serde_json::to_value(AvailabilityResponse {
+                app_id: "a".into(),
+                org_slug: "o".into(),
+                app_slug: "s".into(),
+                reading: AvailabilityReading::from_windows(windows, OpenBuilds::not_measured()),
+            })
+            .unwrap()
+        };
+        let keys =
+            |v: &serde_json::Value| v.as_object().unwrap().keys().cloned().collect::<Vec<_>>();
+        let win = |m, total, failed| AppAvailabilityWindow {
+            window_minutes: m,
+            total,
+            failed,
+        };
+
+        let quiet = body(&[]);
+        assert_eq!(
+            keys(&quiet),
+            [
+                "app_id",
+                "org_slug",
+                "app_slug",
+                "verdict",
+                "objective",
+                "windows",
+                "open_builds"
+            ]
+        );
+        assert_eq!(quiet["verdict"], "no_opinion");
+
+        let burning = body(&[win(5, 30, 15), win(60, 100, 50)]);
+        assert_eq!(burning["verdict"], "burning");
+        for key in [
+            "severity",
+            "burn_rate",
+            "long_window_minutes",
+            "short_window_minutes",
+        ] {
+            assert!(burning.get(key).is_some(), "{key}");
+        }
     }
 }

@@ -665,6 +665,9 @@ const customAppKeys = {
   fleetHealth: (needsAttention: boolean) => ["customApps", "fleetHealth", needsAttention] as const,
   availability: (orgSlug: string, appSlug: string) =>
     ["customApps", "availability", orgSlug, appSlug] as const,
+  /** One registry row, re-read on its own (`?id=`) so the console's availability
+   *  stays live without walking the registry. */
+  row: (id: string) => ["customApps", "row", id] as const,
   logs: (orgSlug: string, appSlug: string, hours: number, limit: number, requestId?: string) =>
     ["customApps", "logs", orgSlug, appSlug, { hours, limit, requestId }] as const,
   clientErrors: (orgSlug: string, appSlug: string, hours: number) =>

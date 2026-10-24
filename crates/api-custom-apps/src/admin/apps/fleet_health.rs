@@ -382,6 +382,16 @@ impl Fleet {
     }
 }
 
+impl Fleet {
+    /// The availability windows an app was assessed from, or `None` when the
+    /// pass did not measure it (the same apps [`Self::health_of`] reports as
+    /// `NotMeasured`). Absent is absent: never a set of zeroed windows, which
+    /// would read as an idle app.
+    pub(super) fn windows_of(&self, app: &Uuid) -> Option<Vec<AppAvailabilityWindow>> {
+        self.assessed.get(app).map(|a| a.windows.clone())
+    }
+}
+
 /// One app's assessment plus the raw numbers behind it.
 struct Assessed {
     verdict: AppVerdict,

@@ -757,12 +757,16 @@ oxyc apps domains remove <app> <domain> [--json]
   `draft` when it has none. `SOURCE` is the repository the app is *registered*
   against. `--builds` adds the live build's id, the repository and commit it was
   built from, who published it and when — one extra request per app, six at a
-  time.
+  time. `--json` rows also carry the server's `verdict` and, for a published
+  app that was measured, `availability`: the same reading `show` fetches, minus
+  the app's identity. An absent `availability` means "not read", never healthy.
 - **`show`** — one app on one screen: the registry row, the live build, the
   draft build when it is newer than the live one, deployment integrity,
   availability, and the 7-day usage summary. `last promote` is when the promote
   or rollback action was last used; `oxyc publish --promote` does not update it,
-  so it can be older than the live build.
+  so it can be older than the live build. `--json` has the registry row under
+  `app` (with its `availability`, when the list carried one) and the separate
+  `availability` request under `availability`.
 - **`builds`** — the build history, newest first. `CHANNEL` marks the build each
   channel points at: `live`, `draft`, or both for one build.
 - **`health`** — with no argument, the fleet table (published apps only):

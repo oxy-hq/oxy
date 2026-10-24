@@ -76,11 +76,12 @@ export const CustomAppsService = {
    * the infinite-query hook walks back from there.
    */
   async list(
-    options: { limit?: number; offset?: number } = {}
+    options: { limit?: number; offset?: number; id?: string } = {}
   ): Promise<{ items: CustomApp[]; next_offset: number | null }> {
     const params = new URLSearchParams();
     if (options.limit != null) params.set("limit", String(options.limit));
     if (options.offset != null) params.set("offset", String(options.offset));
+    if (options.id) params.set("id", options.id);
     const suffix = params.toString();
     const response = await apiClient.get(`/customer-apps${suffix ? `?${suffix}` : ""}`);
     return response.data;

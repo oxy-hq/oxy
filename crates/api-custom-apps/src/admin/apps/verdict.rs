@@ -22,28 +22,33 @@
 //!
 //! ## Cost
 //!
-//! Two grouped ClickHouse reads for the whole page, never one per app
+//! One grouped ClickHouse read per availability window plus one for the
+//! heartbeat baseline, for the whole page, never per app
 //! ([`super::fleet_health`]). A short per-process cache ([`TTL`]) keeps a
 //! launcher that refetches on every window focus from turning into a query per
 //! focus; a verdict this old is still a verdict about the last few minutes of
-//! traffic, which is the window it describes. Evaluations run concurrently up to
+//! traffic, which is the window it describes. The cache keeps the windows too,
+//! so the list's `availability` field ([`super::list_availability`]) is built
+//! from the same reads. Evaluations run concurrently up to
 //! [`MAX_CONCURRENT_EVALUATIONS`]; only `?verdict=true` callers pay for any of it.
 
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::LazyLock;
+use std::time::Duration;
 
 use axum::Json;
 use axum::extract::Query;
 use axum::http::StatusCode;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_observability::fleet_health::AppHealth;
+use oxy_observability::types::AppAvailabilityWindow;
 use serde::Serialize;
 use uuid::Uuid;
 
 use super::dto::{ListAppsQuery, ListAppsResponse};
 use super::fleet_health::{AppKey, evaluate_fleet};
-use super::handlers;
+use super::{handlers, list_availability};
+use crate::custom_apps_cache::{CACHE_MAX_ENTRIES, TtlLru};
 
 /// `AppHealth` plus `draft`. The wire values are `AppHealth`'s snake_case ones,
 /// plus `"draft"`.
@@ -81,39 +86,66 @@ pub(crate) struct AppRef {
 /// The longest this module waits on the observability store. Past it every
 /// measured-eligible app reads `not_measured`: the store did not answer, and
 /// that is not a verdict about the app (`fleet_health`'s own words).
-const BUDGET: Duration = Duration::from_secs(3);
+pub(super) const BUDGET: Duration = Duration::from_secs(3);
 
 /// How long a computed verdict is reused. Short: it describes a window of the
 /// last few minutes, and the point is to bound the load, not to hide a change.
 const TTL: Duration = Duration::from_secs(30);
 
-/// Past this many entries the cache is dropped whole, rather than tracked per
-/// entry: it is a load shield, and a rebuild costs two queries.
-const CACHE_CAP: usize = 4096;
-
 /// Most apps one evaluation covers (`fleet_health`'s page cap, which bounds the
 /// `IN` list sent to ClickHouse). A longer list is evaluated in chunks.
 const CHUNK: usize = 200;
 
-static CACHE: LazyLock<Mutex<HashMap<Uuid, (Instant, AppHealth)>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+/// What one evaluation of a published app produced: its health, and the
+/// availability windows that health was judged from.
+#[derive(Debug, Clone)]
+pub(crate) struct Measured {
+    pub health: AppHealth,
+    /// `None` exactly when the app was not measured (`health` is
+    /// `NotMeasured`). Never zeroed windows: those would read as an idle app.
+    pub windows: Option<Vec<AppAvailabilityWindow>>,
+}
+
+impl Measured {
+    fn not_measured() -> Self {
+        Self {
+            health: AppHealth::NotMeasured,
+            windows: None,
+        }
+    }
+}
+
+/// Bounded to [`CACHE_MAX_ENTRIES`] apps (least recently read goes first) and
+/// [`TTL`] old, like every other cache in `custom_apps_cache`.
+static CACHE: LazyLock<TtlLru<Uuid, Measured>> =
+    LazyLock::new(|| TtlLru::new(CACHE_MAX_ENTRIES, TTL));
 
 /// A verdict per app in `apps`. Every app asked about is in the result.
 pub(crate) async fn verdicts_for(apps: &[AppRef]) -> HashMap<Uuid, ListVerdict> {
-    let mut out: HashMap<Uuid, ListVerdict> = apps
+    measure(apps)
+        .await
+        .into_iter()
+        .map(|(id, m)| (id, m.map_or(ListVerdict::Draft, |m| m.health.into())))
+        .collect()
+}
+
+/// [`Measured`] per app in `apps`; `None` for a draft, which is never sent to
+/// the store. Every app asked about is in the result.
+pub(super) async fn measure(apps: &[AppRef]) -> HashMap<Uuid, Option<Measured>> {
+    let mut out: HashMap<Uuid, Option<Measured>> = apps
         .iter()
         .filter(|a| !a.published)
-        .map(|a| (a.id, ListVerdict::Draft))
+        .map(|a| (a.id, None))
         .collect();
 
     let (cached, wanted) = split_cached(apps.iter().filter(|a| a.published).copied());
-    out.extend(cached.into_iter().map(|(id, h)| (id, h.into())));
+    out.extend(cached.into_iter().map(|(id, m)| (id, Some(m))));
     if wanted.is_empty() {
         return out;
     }
 
     match tokio::time::timeout(BUDGET, evaluate_bounded(&wanted)).await {
-        Ok(measured) => out.extend(measured.into_iter().map(|(id, h)| (id, h.into()))),
+        Ok(measured) => out.extend(measured.into_iter().map(|(id, m)| (id, Some(m)))),
         Err(_) => {
             // Not remembered: a timeout says nothing about the app, and the next
             // request should try the store again rather than inherit the miss.
@@ -121,7 +153,11 @@ pub(crate) async fn verdicts_for(apps: &[AppRef]) -> HashMap<Uuid, ListVerdict> 
                 "app verdicts: the observability store did not answer in {BUDGET:?}; \
                  reporting not_measured"
             );
-            out.extend(wanted.iter().map(|(id, _)| (*id, ListVerdict::NotMeasured)));
+            out.extend(
+                wanted
+                    .iter()
+                    .map(|(id, _)| (*id, Some(Measured::not_measured()))),
+            );
         }
     }
     out
@@ -137,7 +173,7 @@ const MAX_CONCURRENT_EVALUATIONS: usize = 8;
 static EVALUATIONS: tokio::sync::Semaphore =
     tokio::sync::Semaphore::const_new(MAX_CONCURRENT_EVALUATIONS);
 
-async fn evaluate_bounded(wanted: &[AppKey]) -> HashMap<Uuid, AppHealth> {
+async fn evaluate_bounded(wanted: &[AppKey]) -> HashMap<Uuid, Measured> {
     // Never closed, so acquiring cannot fail.
     let _permit = EVALUATIONS.acquire().await;
     // A request that waited for its permit finds what the one ahead of it measured:
@@ -156,44 +192,44 @@ async fn evaluate_bounded(wanted: &[AppKey]) -> HashMap<Uuid, AppHealth> {
     all
 }
 
-async fn evaluate_chunks(keys: &[AppKey]) -> HashMap<Uuid, AppHealth> {
+async fn evaluate_chunks(keys: &[AppKey]) -> HashMap<Uuid, Measured> {
     let mut all = HashMap::with_capacity(keys.len());
     for chunk in keys.chunks(CHUNK) {
-        all.extend(evaluate_fleet(chunk).await.health_of(chunk));
+        let fleet = evaluate_fleet(chunk).await;
+        all.extend(fleet.health_of(chunk).into_iter().map(|(id, health)| {
+            let windows = fleet.windows_of(&id);
+            (id, Measured { health, windows })
+        }));
     }
     all
 }
 
-/// Cached verdicts that are still fresh, and the keys that need evaluating.
-fn split_cached(apps: impl Iterator<Item = AppRef>) -> (HashMap<Uuid, AppHealth>, Vec<AppKey>) {
-    let now = Instant::now();
-    let cache = CACHE.lock().unwrap_or_else(|p| p.into_inner());
+/// Cached results that are still fresh, and the keys that need evaluating.
+fn split_cached(apps: impl Iterator<Item = AppRef>) -> (HashMap<Uuid, Measured>, Vec<AppKey>) {
     let mut fresh = HashMap::new();
     let mut wanted = Vec::new();
     for app in apps {
-        match cache.get(&app.id) {
-            Some((at, health)) if now.duration_since(*at) < TTL => {
-                fresh.insert(app.id, *health);
+        match CACHE.get(&app.id) {
+            Some(measured) => {
+                fresh.insert(app.id, measured);
             }
-            _ => wanted.push((app.id, app.org_id)),
+            None => wanted.push((app.id, app.org_id)),
         }
     }
     (fresh, wanted)
 }
 
-fn remember(measured: &HashMap<Uuid, AppHealth>) {
-    let now = Instant::now();
-    let mut cache = CACHE.lock().unwrap_or_else(|p| p.into_inner());
-    if cache.len() + measured.len() > CACHE_CAP {
-        cache.clear();
+fn remember(measured: &HashMap<Uuid, Measured>) {
+    for (id, m) in measured {
+        CACHE.insert(*id, m.clone());
     }
-    cache.extend(measured.iter().map(|(id, h)| (*id, (now, *h))));
 }
 
-/// `GET /customer-apps` — the registry list, each row carrying its `verdict`.
+/// `GET /customer-apps` — the registry list, each row carrying its `verdict`
+/// and, for a published app that was measured, its `availability`.
 ///
-/// The list handler itself is unchanged; this wraps it, so the verdict is one
-/// batched read added to a response that already makes four.
+/// The list handler itself is unchanged; this wraps it, so both are added by
+/// batched reads to a response that already makes four.
 pub async fn list_apps_with_verdict(
     user: AuthenticatedUserExtractor,
     query: Query<ListAppsQuery>,
@@ -208,9 +244,12 @@ pub async fn list_apps_with_verdict(
             published: a.published_at.is_some(),
         })
         .collect();
-    let verdicts = verdicts_for(&refs).await;
+    let rows = list_availability::rows_for(&refs, list_availability::production_builds).await;
     for item in &mut page.items {
-        item.verdict = verdicts.get(&item.id).copied();
+        if let Some((verdict, availability)) = rows.get(&item.id) {
+            item.verdict = Some(*verdict);
+            item.availability = availability.clone();
+        }
     }
     Ok(Json(page))
 }

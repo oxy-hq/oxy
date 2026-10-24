@@ -421,6 +421,9 @@ pub async fn list_apps_scoped(
     if let Some(orgs) = scope {
         query = query.filter(apps::Column::OrgId.is_in(orgs));
     }
+    if let Some(id) = q.id {
+        query = query.filter(apps::Column::Id.eq(id));
+    }
     let rows = query
         .limit(Some(limit))
         .offset(q.offset)

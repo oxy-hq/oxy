@@ -239,7 +239,7 @@ export const DossierBody = ({
           </div>
         </DossierSection>
         <DossierSection {...section("availability")} title='Availability'>
-          <Availability orgSlug={app.org_slug} appSlug={app.slug} />
+          <Availability app={app} />
         </DossierSection>
         <DossierSection
           {...section("issues")}

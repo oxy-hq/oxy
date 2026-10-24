@@ -136,6 +136,31 @@ export function requireAppRef(app: string): void {
 
 const APP_REF_HINT = '<app> is "<org-slug>/<app-slug>" or an app UUID';
 
+/** `custom_apps_availability::AvailabilityReading`. */
+export interface AppAvailabilityReading {
+  /** `no_opinion` | `healthy` | `burning`. */
+  verdict: string;
+  /** `page` | `ticket`, only when burning. */
+  severity?: string;
+  burn_rate?: number;
+  long_window_minutes?: number;
+  short_window_minutes?: number;
+  objective: number;
+  windows: Array<{
+    window_minutes: number;
+    total: number;
+    failed: number;
+    failure_ratio: number | null;
+  }>;
+  open_builds: {
+    status: string;
+    live_sessions: number;
+    older_sessions: number;
+    older_builds: number;
+    window_minutes: number;
+  };
+}
+
 /**
  * One row of the app listing — `admin::apps::dto::AppResponse`.
  *
@@ -162,6 +187,13 @@ export interface AppRow extends AppIdentity {
   live_published_via?: string;
   /** The build being served records no repository or no commit. */
   source_unrecorded?: boolean;
+  /**
+   * The app's availability reading, as `GET …/{org}/{app}/availability` answers it
+   * minus the app's identity. Present on a list row only for a published app the
+   * server measured; absent is "not read here", never healthy. `--json` passes it
+   * through untouched.
+   */
+  availability?: AppAvailabilityReading;
   created_at: string;
   updated_at: string;
 }

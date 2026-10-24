@@ -39,6 +39,8 @@ pub mod releases;
 /// Slug validation, re-exported so the (non-admin) `/publish` route can reject a
 /// slug before it becomes a schema name / path — see `custom_apps_publish`.
 pub(crate) use ops::is_valid_slug;
+/// The list rows' `availability` field: the per-app availability reading, in one read.
+pub mod list_availability;
 /// Run now `as=schedule`: a scheduled function run once as its schedule would.
 pub mod run_as_schedule;
 /// The audit row of "run now", for every credential.
