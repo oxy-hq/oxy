@@ -181,6 +181,11 @@ async fn a_caught_fetch_refusal_answers_200_and_still_writes_a_host_call_fingerp
         "the caught fetch refusal must leave the fingerprint the pager groups by: op, kind, \
          the normalized message and — since the message names no host — the target"
     );
+    assert_eq!(
+        rows[0].error_kind.as_deref(),
+        Some("host_call"),
+        "a caught failure is stored with its kind though `error` is NULL"
+    );
     assert_ne!(
         rows[0].failure_fingerprint.as_deref(),
         Some(
@@ -232,4 +237,5 @@ async fn a_caught_not_found_host_call_leaves_no_fingerprint() {
         rows[0].failure_fingerprint, None,
         "a not_found host call is control flow and pages nobody"
     );
+    assert_eq!(rows[0].error_kind, None, "and carries no kind");
 }

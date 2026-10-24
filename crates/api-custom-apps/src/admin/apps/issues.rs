@@ -112,6 +112,10 @@ pub struct LastOccurrence {
     /// The error text, when one was recorded. A caught host-call failure and a
     /// 5xx the handler returned record none.
     pub error: Option<String>,
+    /// How it failed, as stored with the failure (see
+    /// `InvocationSummary::error_kind`). `None` when it was recorded before the
+    /// kind was stored.
+    pub error_kind: Option<String>,
     /// The publish's build id of the build it ran on.
     pub build_id: Option<String>,
     pub created_at: String,
@@ -130,6 +134,7 @@ struct IssueRow {
     last_status: String,
     last_result_status: Option<i16>,
     last_error: Option<String>,
+    last_error_kind: Option<String>,
     last_build: Uuid,
 }
 
@@ -144,7 +149,7 @@ struct IssueRow {
 const ISSUES_SQL: &str = r#"
 WITH failed AS (
     SELECT id, function_name, failure_fingerprint, build_id, status, result_status, error,
-           created_at,
+           error_kind, created_at,
            ROW_NUMBER() OVER (
                PARTITION BY function_name, failure_fingerprint
                ORDER BY created_at DESC, id DESC
@@ -166,6 +171,7 @@ SELECT function_name,
        MAX(status) FILTER (WHERE recency = 1) AS last_status,
        MAX(result_status) FILTER (WHERE recency = 1) AS last_result_status,
        MAX(error) FILTER (WHERE recency = 1) AS last_error,
+       MAX(error_kind) FILTER (WHERE recency = 1) AS last_error_kind,
        (ARRAY_AGG(build_id) FILTER (WHERE recency = 1))[1] AS last_build
 FROM failed
 GROUP BY function_name, failure_fingerprint
@@ -261,6 +267,7 @@ pub async fn issues_of(
                 status: row.last_status,
                 result_status: row.last_result_status,
                 error: row.last_error,
+                error_kind: row.last_error_kind,
                 build_id: labels.get(&row.last_build).cloned(),
                 created_at: row.last_seen.to_rfc3339(),
             },

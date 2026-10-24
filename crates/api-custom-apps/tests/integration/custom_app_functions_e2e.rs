@@ -173,6 +173,7 @@ async fn a_route_function_runs_in_the_isolate_and_records_its_invocation() {
         .collect();
     assert_eq!(seen, vec![("route", "success", Some(t.guest_id), None)]);
     assert_eq!(rows[0].failure_fingerprint, None, "a success pages nobody");
+    assert_eq!(rows[0].error_kind, None, "a success has no failure kind");
 }
 
 #[tokio::test]
@@ -213,5 +214,10 @@ async fn a_function_that_throws_records_an_error_invocation_with_a_failure_finge
     assert!(
         !fingerprint.is_empty(),
         "an empty fingerprint groups nothing"
+    );
+    assert_eq!(
+        row.error_kind.as_deref(),
+        Some("threw"),
+        "the kind is stored with the message, not left to be read back from its prefix"
     );
 }

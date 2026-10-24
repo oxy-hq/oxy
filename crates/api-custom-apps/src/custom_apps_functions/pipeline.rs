@@ -389,12 +389,13 @@ pub(super) async fn record(
     finished: Finished<'_>,
     outcome: RunOutcome,
 ) -> Recorded {
-    let (status, error_msg, body, http_status, host_call) = outcome;
+    let (status, error_msg, body, http_status, host_call, typed_kind) = outcome;
     let duration_ms = finished.clock.started.elapsed().as_millis() as i64;
     let failure = failure_signal::Failure::of(
         status,
         http_status,
         error_msg.as_deref(),
+        typed_kind.map(failure_signal::label_of_kind),
         host_call.as_ref(),
     );
     let settled = Settled {
@@ -404,6 +405,7 @@ pub(super) async fn record(
         body: &body,
         http_status,
         fingerprint: failure.as_ref().map(|f| f.fingerprint.clone()),
+        error_kind: failure.as_ref().map(|f| f.kind),
     };
     if settle_row(db, &finished, &settled).await
         && let Some(failure) = &failure
@@ -461,6 +463,8 @@ struct Settled<'a> {
     body: &'a str,
     http_status: u16,
     fingerprint: Option<String>,
+    /// [`failure_signal::Failure::kind`], stored beside the fingerprint.
+    error_kind: Option<&'static str>,
 }
 
 /// Write the outcome to the invocation row; whether the write landed (a page
@@ -478,6 +482,7 @@ async fn settle_row(
     update.duration_ms = Set(Some(settled.duration_ms));
     update.error = Set(settled.error.map(str::to_string));
     update.failure_fingerprint = Set(settled.fingerprint.clone());
+    update.error_kind = Set(settled.error_kind.map(str::to_string));
     if finished.persist_result && settled.status == "success" {
         update.result_body = Set(Some(settled.body.to_string()));
         update.result_status = Set(Some(settled.http_status as i16));

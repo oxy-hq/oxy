@@ -18,6 +18,8 @@
 use sha2::{Digest, Sha256};
 
 use super::host_error::{HostError, HostErrorKind};
+#[cfg(feature = "custom-app-functions")]
+use super::runtime::RuntimeError;
 
 /// How an invocation failed, with nothing of what it said.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,10 +225,18 @@ impl Failure {
     /// broken host call looks from an app that handles its errors. So did one
     /// that answered below 500 after a host call failed (`host_call`): catching
     /// the error hides it from the response, not from on-call.
+    ///
+    /// `error_kind` is the kind label stored with the failure
+    /// (`app_function_invocations.error_kind`, [`Failure::kind`]'s own values).
+    /// It decides the kind of an `error` status when it names one of the four
+    /// labels that status can carry; the prefix of `error` is read only when it
+    /// is `None` — a row written before the column — or names none of them.
+    /// The fingerprint is always of the text.
     pub fn of(
         status: &str,
         http_status: u16,
         error: Option<&str>,
+        error_kind: Option<&str>,
         host_call: Option<&HostCallFailure>,
     ) -> Option<Self> {
         let (kind, fingerprint) = match status {
@@ -249,10 +259,13 @@ impl Failure {
             // Digested whole, not normalized: the status IS the signature, and
             // normalizing would fold a new 500 into a function's usual 503.
             "success" => ("http_5xx", digest(&format!("http status {http_status}"))),
-            "timeout" => ("timeout", Self::timeout_fingerprint()),
+            "timeout" => (TIMEOUT_KIND, Self::timeout_fingerprint()),
             _ => {
                 let message = error.unwrap_or_default();
-                (kind_of_error(message), fingerprint(message))
+                let kind = error_kind
+                    .and_then(stored_error_kind)
+                    .unwrap_or_else(|| kind_of_error(message));
+                (kind, fingerprint(message))
             }
         };
         Some(Self {
@@ -309,15 +322,35 @@ pub(crate) fn seeded_fingerprint(
     http_status: u16,
     error: Option<&str>,
 ) -> Option<String> {
-    Failure::of(status, http_status, error, None).map(|f| f.fingerprint)
+    Failure::of(status, http_status, error, None, None).map(|f| f.fingerprint)
 }
+
+/// The kind [`Failure::of`] gives the same outcome, which the runner stores
+/// beside the fingerprint (`app_function_invocations.error_kind`).
+pub(crate) fn seeded_error_kind(
+    status: &str,
+    http_status: u16,
+    error: Option<&str>,
+) -> Option<&'static str> {
+    Failure::of(status, http_status, error, None, None).map(|f| f.kind)
+}
+
+/// The kind of a `timeout` status: no text is read for it, and the reaper
+/// writes it on the rows it times out.
+pub(crate) const TIMEOUT_KIND: &str = "timeout";
 
 /// Who an `error` status belongs to, from the [`HostError`] kind the failure
 /// carries: the app's code threw, the runtime failed, the app breached its
 /// heap ceiling. Anything else failed before the isolate ran — a workspace or
 /// build lookup, a missing function — which is the platform's, not the app's.
 fn kind_of_host_error(error: &HostError) -> &'static str {
-    match error.kind {
+    label_of_kind(error.kind)
+}
+
+/// [`kind_of_host_error`] for a kind that travels without its text: the run
+/// outcome carries the kind, and the row stores the label.
+pub(super) fn label_of_kind(kind: HostErrorKind) -> &'static str {
+    match kind {
         HostErrorKind::Threw => "threw",
         HostErrorKind::Internal => "internal",
         // The app's fault, and the fallback below would have called it the
@@ -332,6 +365,29 @@ fn kind_of_host_error(error: &HostError) -> &'static str {
         | HostErrorKind::Refused
         | HostErrorKind::Backend => "platform",
     }
+}
+
+/// The kind of the failure a [`RuntimeError`] is, from the variant itself
+/// rather than from the start of its text. Only the variants recorded as an
+/// `error` status have one: a cancellation, a timeout and a shed are told by
+/// their status.
+#[cfg(feature = "custom-app-functions")]
+pub(super) fn error_kind_of(error: &RuntimeError) -> Option<HostErrorKind> {
+    match error {
+        RuntimeError::Js(_) => Some(HostErrorKind::Threw),
+        RuntimeError::Internal(_) => Some(HostErrorKind::Internal),
+        RuntimeError::OutOfMemory => Some(HostErrorKind::MemoryLimit),
+        RuntimeError::Cancelled | RuntimeError::Timeout | RuntimeError::Overloaded => None,
+    }
+}
+
+/// The labels an `error` status carries: [`label_of_kind`]'s values. A stored
+/// label outside this list is not one this build can have written for an
+/// `error`, so it is not trusted and the text is read instead.
+fn stored_error_kind(label: &str) -> Option<&'static str> {
+    ["threw", "internal", "exceeded_memory", "platform"]
+        .into_iter()
+        .find(|known| *known == label)
 }
 
 /// The same decision for a message that arrives as text — the stored
@@ -938,28 +994,36 @@ mod tests {
 
     #[test]
     fn only_a_failed_outcome_is_a_failure() {
-        assert_eq!(Failure::of("success", 200, None, None), None);
+        assert_eq!(Failure::of("success", 200, None, None, None), None);
         assert_eq!(
-            Failure::of("success", 404, None, None),
+            Failure::of("success", 404, None, None, None),
             None,
             "a 4xx is an answer"
         );
         assert_eq!(
-            Failure::of("cancelled", 0, Some("function was cancelled"), None),
+            Failure::of("cancelled", 0, Some("function was cancelled"), None, None),
             None
         );
 
-        let caught = Failure::of("success", 500, None, None).expect("a 5xx is a failure");
+        let caught = Failure::of("success", 500, None, None, None).expect("a 5xx is a failure");
         assert_eq!(caught.kind, "http_5xx");
         assert_ne!(
             caught.fingerprint,
-            Failure::of("success", 503, None, None).unwrap().fingerprint
+            Failure::of("success", 503, None, None, None)
+                .unwrap()
+                .fingerprint
         );
 
         assert_eq!(
-            Failure::of("timeout", 0, Some("function execution timed out"), None)
-                .unwrap()
-                .kind,
+            Failure::of(
+                "timeout",
+                0,
+                Some("function execution timed out"),
+                None,
+                None
+            )
+            .unwrap()
+            .kind,
             "timeout"
         );
         assert_eq!(
@@ -967,13 +1031,14 @@ mod tests {
                 "error",
                 0,
                 Some("internal runtime error: isolate died"),
+                None,
                 None
             )
             .unwrap()
             .kind,
             "internal"
         );
-        let threw = Failure::of("error", 0, Some(CODE_27_A), None).unwrap();
+        let threw = Failure::of("error", 0, Some(CODE_27_A), None, None).unwrap();
         assert_eq!(threw.kind, "threw");
         assert_eq!(threw.fingerprint, fingerprint(CODE_27_B));
         // Never reached the app's code: the platform's failure, not the app's.
@@ -982,6 +1047,7 @@ mod tests {
                 "error",
                 0,
                 Some("workspace lookup failed: connection refused"),
+                None,
                 None
             )
             .unwrap()
@@ -989,7 +1055,9 @@ mod tests {
             "platform"
         );
         assert_eq!(
-            Failure::of("timeout", 0, None, None).unwrap().fingerprint,
+            Failure::of("timeout", 0, None, None, None)
+                .unwrap()
+                .fingerprint,
             Failure::timeout_fingerprint(),
             "the reaper's timeouts group with the runtime's"
         );
@@ -1013,7 +1081,8 @@ mod tests {
             None,
         )
         .unwrap();
-        let f = Failure::of("success", 200, None, Some(&hc)).expect("caught host failure pages");
+        let f =
+            Failure::of("success", 200, None, None, Some(&hc)).expect("caught host failure pages");
         assert_eq!(f.kind, "host_call");
         assert_eq!(
             f.fingerprint,
@@ -1058,10 +1127,10 @@ mod tests {
         .unwrap();
         assert_eq!((routine.op, routine.kind), (broken.op, broken.kind));
         assert_ne!(
-            Failure::of("success", 200, None, Some(&routine))
+            Failure::of("success", 200, None, None, Some(&routine))
                 .unwrap()
                 .fingerprint,
-            Failure::of("success", 200, None, Some(&broken))
+            Failure::of("success", 200, None, None, Some(&broken))
                 .unwrap()
                 .fingerprint,
             "two failures of one op and kind are two fingerprints"
@@ -1295,7 +1364,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let failure = Failure::of("success", 200, None, Some(&hc)).unwrap();
+        let failure = Failure::of("success", 200, None, None, Some(&hc)).unwrap();
         for printed in [
             format!("{hc:?}"),
             format!("{hc:#?}"),
@@ -1322,14 +1391,16 @@ mod tests {
             message: "query timed out after #".into(),
             target: None,
         };
-        let real = Failure::of("success", 503, None, Some(&hc)).unwrap();
+        let real = Failure::of("success", 503, None, None, Some(&hc)).unwrap();
         assert_eq!(real.kind, "http_5xx");
         assert_eq!(real.host_call, None, "the page names the 5xx, not the call");
         assert_eq!(
-            Failure::of("timeout", 0, None, Some(&hc)).unwrap().kind,
+            Failure::of("timeout", 0, None, None, Some(&hc))
+                .unwrap()
+                .kind,
             "timeout"
         );
-        assert_eq!(Failure::of("cancelled", 0, None, Some(&hc)), None);
+        assert_eq!(Failure::of("cancelled", 0, None, None, Some(&hc)), None);
     }
 
     /// Load shedding is the platform working as designed. Through the generic
@@ -1344,6 +1415,7 @@ mod tests {
                 "shed",
                 0,
                 Some(&super::super::runtime::RuntimeError::Overloaded.to_string()),
+                None,
                 None,
             ),
             None,
@@ -1362,7 +1434,8 @@ mod tests {
     #[test]
     fn an_out_of_memory_error_is_attributed_to_the_app() {
         let message = super::super::runtime::RuntimeError::OutOfMemory.to_string();
-        let failure = Failure::of("error", 0, Some(&message), None).expect("an OOM is a failure");
+        let failure =
+            Failure::of("error", 0, Some(&message), None, None).expect("an OOM is a failure");
         assert_eq!(
             failure.kind, "exceeded_memory",
             "a heap breach must not read as a platform fault"
@@ -1383,11 +1456,14 @@ mod tests {
         }
     }
 
-    /// The typed route and the prefix fallback give one answer for every kind
-    /// a failed invocation can carry, through the real `Display` text, so a
-    /// reworded prefix fails here rather than reclassifying silently.
+    /// The two routes to an `error` status's kind — the label stored with the
+    /// row, and the prefix of its text for a row with none — give one answer
+    /// for every kind a failed invocation can carry, through the real
+    /// `Display` text, so a reworded prefix fails here rather than
+    /// reclassifying silently. Whole `Failure`s are compared: the kind and the
+    /// fingerprint.
     #[test]
-    fn the_typed_kind_and_the_prefix_fallback_agree() {
+    fn the_stored_kind_and_the_prefix_fallback_agree() {
         use super::super::host_error::CapabilityArea;
         for (error, expected) in [
             (HostError::threw("TypeError: x"), "threw"),
@@ -1410,10 +1486,81 @@ mod tests {
                 "platform",
             ),
         ] {
+            let text = error.to_string();
             assert_eq!(kind_of_host_error(&error), expected, "typed: {error}");
-            assert_eq!(kind_of_error(&error.to_string()), expected, "text: {error}");
-            let failure = Failure::of("error", 0, Some(&error.to_string()), None).unwrap();
-            assert_eq!(failure.kind, expected, "Failure::of: {error}");
+            assert_eq!(kind_of_error(&text), expected, "text: {error}");
+
+            let stored = label_of_kind(error.kind);
+            let from_column = Failure::of("error", 0, Some(&text), Some(stored), None).unwrap();
+            let from_text = Failure::of("error", 0, Some(&text), None, None).unwrap();
+            assert_eq!(from_column.kind, expected, "stored kind: {error}");
+            assert_eq!(from_text.kind, expected, "prefix: {error}");
+            assert_eq!(from_column, from_text, "one failure, two routes: {error}");
         }
+    }
+
+    /// A stored kind is read first: the text is not consulted when the row has
+    /// one, so a text the prefix would call something else does not move it.
+    /// A label an `error` cannot carry is not trusted, and the text decides.
+    #[test]
+    fn a_stored_kind_wins_and_an_unusable_one_falls_back_to_the_text() {
+        let text = Some("workspace not found");
+        assert_eq!(kind_of_error("workspace not found"), "platform");
+        let stored = Failure::of("error", 0, text, Some("threw"), None).unwrap();
+        assert_eq!(stored.kind, "threw", "the column, not the prefix");
+        assert_eq!(
+            stored.fingerprint,
+            fingerprint("workspace not found"),
+            "the fingerprint is always of the text"
+        );
+        for unusable in ["timeout", "host_call", "http_5xx", "", "no_such_kind"] {
+            let failure = Failure::of("error", 0, text, Some(unusable), None).unwrap();
+            assert_eq!(
+                failure.kind, "platform",
+                "{unusable:?} is not an error kind"
+            );
+        }
+    }
+
+    /// The kind a run outcome carries for a [`RuntimeError`] is the one the
+    /// text of that error parses to, for every variant recorded as an `error`
+    /// — and there is none for the three told by their status.
+    #[cfg(feature = "custom-app-functions")]
+    #[test]
+    fn the_kind_a_runtime_error_carries_matches_its_text() {
+        for error in [
+            RuntimeError::Js("TypeError: x".into()),
+            RuntimeError::Internal("bootstrap failed".into()),
+            RuntimeError::OutOfMemory,
+        ] {
+            let typed = error_kind_of(&error).expect("an error status carries a kind");
+            assert_eq!(typed, HostError::from(error.to_string()).kind, "{error}");
+        }
+        for error in [
+            RuntimeError::Cancelled,
+            RuntimeError::Timeout,
+            RuntimeError::Overloaded,
+        ] {
+            assert_eq!(error_kind_of(&error), None, "{error}");
+        }
+    }
+
+    /// Every failure carries a kind the column can hold, and the reaper's
+    /// constant is the kind a timeout gets from `Failure::of`.
+    #[test]
+    fn every_failure_has_a_stored_kind_and_the_reaper_writes_the_timeout_one() {
+        assert_eq!(
+            Failure::of("timeout", 0, None, None, None).unwrap().kind,
+            TIMEOUT_KIND
+        );
+        assert_eq!(
+            Failure::of("success", 502, None, None, None).unwrap().kind,
+            "http_5xx"
+        );
+        assert_eq!(seeded_error_kind("success", 200, None), None);
+        assert_eq!(
+            seeded_error_kind("error", 0, Some("function threw: x")),
+            Some("threw")
+        );
     }
 }

@@ -22,7 +22,7 @@ use sea_orm::{ActiveValue::Set, ConnectionTrait, DbErr, EntityTrait};
 use uuid::Uuid;
 
 use super::calendar::{Calendar, LIVE, Stretch};
-use crate::custom_apps_functions::seeded_fingerprint;
+use crate::custom_apps_functions::{seeded_error_kind, seeded_fingerprint};
 
 /// What r4's `store` stores for an unknown id: the TypeError the real runtime
 /// records for `customer-apps/examples/pulse-demo/r4/functions/store.js`. The
@@ -48,6 +48,8 @@ pub struct Seeded {
     pub duration_ms: i64,
     pub error: Option<&'static str>,
     pub fingerprint: Option<String>,
+    /// Stored with the fingerprint, as the runner stores them together.
+    pub error_kind: Option<&'static str>,
     pub at: DateTime<Utc>,
 }
 
@@ -101,6 +103,7 @@ fn store_call(app_id: Uuid, s: &Stretch, n: usize, at: DateTime<Utc>, viewer: Uu
         row.status = "error";
         row.error = Some(R4_STORE_ERROR);
         row.fingerprint = seeded_fingerprint("error", 0, Some(R4_STORE_ERROR));
+        row.error_kind = seeded_error_kind("error", 0, Some(R4_STORE_ERROR));
     }
     row
 }
@@ -139,6 +142,7 @@ fn system(
         duration_ms,
         error: None,
         fingerprint: None,
+        error_kind: None,
         at,
     }
 }
@@ -216,6 +220,7 @@ fn model(app_id: Uuid, build: Uuid, r: &Seeded) -> ActiveModel {
         request_hash: Set(None),
         result_status: Set(None),
         failure_fingerprint: Set(r.fingerprint.clone()),
+        error_kind: Set(r.error_kind.map(str::to_string)),
         environment: Set("production".to_string()),
         credential_token_id: Set(None),
     }

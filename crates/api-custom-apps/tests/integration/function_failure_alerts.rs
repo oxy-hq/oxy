@@ -129,6 +129,7 @@ async fn seed(db: &DatabaseConnection) -> Seeded {
         failure_fingerprint: Set(None),
         environment: Set("production".into()),
         credential_token_id: Set(None),
+        error_kind: Set(None),
     }
     .insert(db)
     .await
@@ -170,6 +171,7 @@ async fn failed_as(
         failure_fingerprint: Set(fingerprint.map(str::to_string)),
         environment: Set("production".into()),
         credential_token_id: Set(None),
+        error_kind: Set(None),
     }
     .insert(db)
     .await
@@ -204,6 +206,7 @@ async fn failed_in(db: &DatabaseConnection, s: &Seeded, environment: &str, ago: 
         failure_fingerprint: Set(Some(FINGERPRINT.into())),
         environment: Set(environment.into()),
         credential_token_id: Set(None),
+        error_kind: Set(None),
     }
     .insert(db)
     .await
@@ -318,6 +321,7 @@ async fn succeeded(db: &DatabaseConnection, s: &Seeded, ago: Duration, fingerpri
         failure_fingerprint: Set(fingerprint.map(str::to_string)),
         environment: Set("production".into()),
         credential_token_id: Set(None),
+        error_kind: Set(None),
     }
     .insert(db)
     .await
@@ -574,6 +578,7 @@ async fn a_chronic_5xx_from_before_fingerprints_is_held_too() {
         failure_fingerprint: Set(None),
         environment: Set("production".into()),
         credential_token_id: Set(None),
+        error_kind: Set(None),
     }
     .insert(&db)
     .await

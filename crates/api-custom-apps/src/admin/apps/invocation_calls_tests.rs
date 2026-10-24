@@ -30,6 +30,7 @@ fn invocation(
         failure_fingerprint: None,
         environment: "production".into(),
         credential_token_id: None,
+        error_kind: None,
     }
 }
 

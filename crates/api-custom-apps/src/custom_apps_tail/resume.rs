@@ -164,6 +164,7 @@ mod tests {
             failure_fingerprint: None,
             environment: "dev-a1".into(),
             credential_token_id: None,
+            error_kind: None,
         }
     }
 

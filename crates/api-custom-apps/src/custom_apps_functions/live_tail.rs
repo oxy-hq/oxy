@@ -24,7 +24,7 @@ pub(super) async fn follow(args: &RunArgs<'_>) -> Follower {
 
 /// The run returned `outcome` after `ran`; `failed` is the pager's verdict.
 pub(super) fn finish(follower: Follower, outcome: &RunOutcome, failed: bool, ran: Duration) {
-    let (status, error, _, http_status, _) = outcome;
+    let (status, error, _, http_status, _, _) = outcome;
     follower.finish(&Outcome {
         status: (*status).to_string(),
         failed,

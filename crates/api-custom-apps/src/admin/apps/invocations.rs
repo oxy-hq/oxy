@@ -92,6 +92,11 @@ pub struct InvocationSummary {
     pub result_status: Option<i16>,
     pub duration_ms: Option<i64>,
     pub error: Option<String>,
+    /// How it failed — `threw` | `internal` | `exceeded_memory` | `platform` |
+    /// `timeout` | `http_5xx` | `host_call` — as stored with the failure. `None`
+    /// for an invocation that did not fail, and for a failure recorded before
+    /// the kind was stored, whose kind is only in the start of `error`.
+    pub error_kind: Option<String>,
     pub created_at: String,
     /// A stored response body is available (kept for keyed route calls).
     pub has_result: bool,
@@ -191,6 +196,7 @@ pub(crate) fn summary(
         result_status: row.result_status,
         duration_ms: row.duration_ms,
         error: row.error,
+        error_kind: row.error_kind,
         created_at: row.created_at.to_rfc3339(),
         has_result: row.result_body.is_some(),
     }

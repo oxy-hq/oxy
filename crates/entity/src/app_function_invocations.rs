@@ -57,6 +57,13 @@ pub struct Model {
     /// session and for every row from before the column. No foreign key: the
     /// attribution outlives the token row.
     pub credential_token_id: Option<Uuid>,
+    /// How the invocation failed, as the label `failure_signal::Failure::kind`
+    /// gives it: `threw` | `internal` | `exceeded_memory` | `platform` |
+    /// `timeout` | `http_5xx` | `host_call`. Written with `error`, from the
+    /// typed kind the run carried. `None` when the invocation did not fail,
+    /// and on every row from before the column — which readers classify from
+    /// the text of `error` instead.
+    pub error_kind: Option<String>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

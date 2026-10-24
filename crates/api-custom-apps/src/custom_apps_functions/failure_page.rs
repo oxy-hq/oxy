@@ -300,7 +300,7 @@ mod tests {
             message: "warehouse insert failed: query failed: HTTP # Bad Request: Code: #.".into(),
             target: None,
         };
-        let caught = Failure::of("success", 200, None, Some(&hc)).unwrap();
+        let caught = Failure::of("success", 200, None, None, Some(&hc)).unwrap();
         let line = where_to_look(&caught);
         assert!(line.contains("`warehouse.insert`"), "{line}");
         assert!(line.contains("`host_call_failed`"), "{line}");
@@ -311,7 +311,7 @@ mod tests {
         assert!(!line.contains("Bad Request"), "{line}");
         assert!(!line.contains(&hc.message), "{line}");
 
-        let threw = Failure::of("error", 0, Some("function threw: Error: x"), None).unwrap();
+        let threw = Failure::of("error", 0, Some("function threw: Error: x"), None, None).unwrap();
         assert!(where_to_look(&threw).starts_with("The message is in"));
     }
 
@@ -322,8 +322,14 @@ mod tests {
     /// its reader to look for a platform fault behind two upload handlers.
     #[test]
     fn an_exceeded_memory_page_does_not_read_a_shared_fingerprint_as_a_platform_fault() {
-        let killed =
-            Failure::of("error", 0, Some("function exceeded its memory limit"), None).unwrap();
+        let killed = Failure::of(
+            "error",
+            0,
+            Some("function exceeded its memory limit"),
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(killed.kind, "exceeded_memory");
 
         let line = where_to_look(&killed);

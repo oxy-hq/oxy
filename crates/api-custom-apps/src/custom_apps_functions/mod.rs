@@ -134,7 +134,7 @@ pub(crate) use check_run::QueuedBy;
 /// the engine-backed tests in `tests/custom_apps/` build a real host.
 #[cfg(feature = "custom-app-functions")]
 pub use data_audit::InvocationIdentity;
-pub(crate) use failure_signal::seeded_fingerprint;
+pub(crate) use failure_signal::{seeded_error_kind, seeded_fingerprint};
 /// Every name a host op pages under. Read by `tests/custom_apps/canary_coverage.rs`,
 /// which checks the platform canary exercises each one or exempts it with a reason.
 #[cfg(feature = "custom-app-functions")]
@@ -150,6 +150,7 @@ use entity::app_function_invocations;
 #[cfg(feature = "custom-app-functions")]
 use entity::prelude::AppFunctionInvocations;
 use futures::future::BoxFuture;
+use host_error::HostErrorKind;
 use oxy::database::client::establish_connection;
 use oxy_app_core::custom_app_env_request::{check_origin, request_environment};
 use oxy_app_core::custom_app_environment::AppEnvironment;
@@ -856,6 +857,10 @@ async fn reap_stuck_invocations(db: &sea_orm::DatabaseConnection) {
             app_function_invocations::Column::FailureFingerprint,
             Expr::value(failure_signal::Failure::timeout_fingerprint()),
         )
+        .col_expr(
+            app_function_invocations::Column::ErrorKind,
+            Expr::value(failure_signal::TIMEOUT_KIND),
+        )
         .filter(app_function_invocations::Column::Status.eq("running"))
         .filter(app_function_invocations::Column::CreatedAt.lt(cutoff))
         .exec(db)
@@ -943,6 +948,7 @@ async fn insert_running_invocation(
         result_status: Set(None),
         request_hash: Set(request_hash),
         failure_fingerprint: Set(None),
+        error_kind: Set(None),
         environment: Set(scope.environment_name()),
         credential_token_id: Set(scope.credential_token_id),
     }
@@ -988,6 +994,10 @@ async fn reclaim_or_conflict(
         // `created_at` reset below, it would count as a recent one.
         .col_expr(
             app_function_invocations::Column::FailureFingerprint,
+            Expr::value(Option::<String>::None),
+        )
+        .col_expr(
+            app_function_invocations::Column::ErrorKind,
             Expr::value(Option::<String>::None),
         )
         .col_expr(
@@ -1571,6 +1581,7 @@ async fn isolate_route(
         0u16,
         // No isolate, so no host call to have failed.
         None::<failure_signal::HostCallFailure>,
+        Some(HostErrorKind::Backend),
     )
 }
 
@@ -1632,9 +1643,9 @@ fn respond_route(
 }
 
 /// Outcome shared by both feature arms:
-/// `(status_str, error, body, http_status, host_call)`.
+/// `(status_str, error, body, http_status, host_call, error_kind)`.
 ///
-/// FIVE elements, and the count is load-bearing across a `cfg`. The
+/// SIX elements, and the count is load-bearing across a `cfg`. The
 /// feature-off arm builds this tuple by hand, so widening it here without
 /// widening there compiles under the default features and fails only under
 /// `--no-default-features` — which is a supported configuration
@@ -1651,12 +1662,18 @@ fn respond_route(
 /// The fifth is the first `ctx.*` call that failed in a way that pages. A
 /// handler that catches that failure and answers 2xx looks like a success in
 /// every other element, so without it such an invocation never paged.
+///
+/// The sixth is the typed kind of the text in the second, when the failure has
+/// one: what stores `error_kind` on the row and what
+/// [`failure_signal::Failure::of`] reads before it reads the text. `None` for
+/// every status that is not an `error`, whose kind needs no text.
 type RunOutcome = (
     &'static str,
     Option<String>,
     String,
     u16,
     Option<failure_signal::HostCallFailure>,
+    Option<HostErrorKind>,
 );
 
 /// Max `function_log` events emitted per run. Bounds the run's event log (the
@@ -1796,6 +1813,7 @@ async fn insert_queued_invocation(
         result_status: Set(None),
         request_hash: Set(None),
         failure_fingerprint: Set(None),
+        error_kind: Set(None),
         environment: Set(admitted.resolved.environment.name()),
         credential_token_id: Set(queued.credential_token_id),
     })
@@ -2240,6 +2258,7 @@ async fn run_with_runtime(args: RunArgs<'_>) -> RunOutcome {
         outcome.0,
         outcome.3,
         outcome.1.as_deref(),
+        outcome.5.map(failure_signal::label_of_kind),
         outcome.4.as_ref(),
     );
     live_tail::finish(follower, &outcome, failure.is_some(), started.elapsed());
@@ -2283,7 +2302,16 @@ async fn resolve_project_context(
 ) -> Result<std::sync::Arc<dyn seam::FunctionProjectContext>, RunOutcome> {
     use entity::prelude::Workspaces;
 
-    let failed = |message: String| ("error", Some(message), String::new(), 0, None);
+    let failed = |message: String| {
+        (
+            "error",
+            Some(message),
+            String::new(),
+            0,
+            None,
+            Some(HostErrorKind::Backend),
+        )
+    };
     let workspace = match Workspaces::find_by_id(args.app.project_id)
         .one(args.db)
         .await
@@ -2574,7 +2602,7 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
     let host_call = host_for_audit.host_call_failure();
 
     match result {
-        Ok(resp) => ("success", None, resp.body, resp.status, host_call),
+        Ok(resp) => ("success", None, resp.body, resp.status, host_call, None),
         Err(runtime::RuntimeError::Cancelled) => (
             "cancelled",
             Some("function was cancelled".into()),
@@ -2583,6 +2611,7 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
             // framing carries these, so the value is never read.
             0,
             host_call,
+            None,
         ),
         Err(runtime::RuntimeError::Timeout) => (
             "timeout",
@@ -2592,6 +2621,7 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
             // framing carries these, so the value is never read.
             0,
             host_call,
+            None,
         ),
         // Both of the new platform-side refusals record as `error` on the
         // invocation row rather than as new status strings. `status_label`
@@ -2609,7 +2639,14 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
         // countable without a new invocation status.
         Err(e @ runtime::RuntimeError::OutOfMemory) => {
             oxy_telemetry::metrics::record::custom_app_heap_termination(&org_id.to_string());
-            ("error", Some(e.to_string()), String::new(), 0, host_call)
+            (
+                "error",
+                Some(e.to_string()),
+                String::new(),
+                0,
+                host_call,
+                Some(HostErrorKind::MemoryLimit),
+            )
         }
         // A shed is the platform working as designed, so it gets its own status
         // rather than falling through to `error`. Through the generic arm it
@@ -2625,8 +2662,19 @@ async fn run_with_runtime_inner(args: RunArgs<'_>) -> RunOutcome {
             // for why this is not a 503.
             0,
             host_call,
+            None,
         ),
-        Err(e) => ("error", Some(e.to_string()), String::new(), 0, host_call),
+        Err(e) => {
+            let kind = failure_signal::error_kind_of(&e);
+            (
+                "error",
+                Some(e.to_string()),
+                String::new(),
+                0,
+                host_call,
+                kind,
+            )
+        }
     }
 }
 

@@ -42,6 +42,11 @@ pub struct FunctionRunDetail {
     /// The function's return body on success.
     pub answer: Option<String>,
     pub error: Option<String>,
+    /// How the invocation `invocation_id` names failed, as stored with it
+    /// (`InvocationSummary::error_kind`). `None` while there is no invocation,
+    /// when it did not fail, and when it was recorded before the kind was
+    /// stored. `error` above is the run's own message and is unchanged.
+    pub error_kind: Option<String>,
     pub logs: Vec<FunctionRunLogLine>,
 }
 
@@ -184,6 +189,29 @@ fn log_lines(events: Vec<agentic_runtime::crud::EventRow>) -> Vec<FunctionRunLog
         .collect()
 }
 
+/// The kind stored on the invocation a run wrote, scoped to the app. Read
+/// best-effort: the run's detail is complete without it, so a failed read is a
+/// missing field, not a failed response.
+async fn invocation_error_kind(
+    db: &DatabaseConnection,
+    app_id: Uuid,
+    invocation_id: Option<Uuid>,
+) -> Option<String> {
+    use entity::app_function_invocations::{Column, Entity};
+    use sea_orm::{ColumnTrait, QueryFilter, QuerySelect};
+    let invocation_id = invocation_id?;
+    Entity::find_by_id(invocation_id)
+        .filter(Column::AppId.eq(app_id))
+        .select_only()
+        .column(Column::ErrorKind)
+        .into_tuple::<Option<String>>()
+        .one(db)
+        .await
+        .ok()
+        .flatten()
+        .flatten()
+}
+
 /// Run `run_id` of app `id`, for `caller`: a bare `404` when it is not this
 /// app's function run or `caller` may not read it.
 pub(crate) async fn detail(
@@ -224,6 +252,7 @@ pub(crate) async fn detail(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let invocation_id =
         completed_invocation_id(events.iter().map(|e| (e.event_type.as_str(), &e.payload)));
+    let error_kind = invocation_error_kind(db, id, invocation_id).await;
     Ok(FunctionRunDetail {
         run_id: run_id.to_string(),
         status: Some(status),
@@ -232,6 +261,7 @@ pub(crate) async fn detail(
         invocation_id,
         answer: run.answer,
         error: run.error_message,
+        error_kind,
         logs: log_lines(events),
     })
 }
